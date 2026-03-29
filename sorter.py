@@ -1,6 +1,8 @@
 import os
 import time
 import csv
+import shutil
+import datetime
 import tkinter as tk
 from tkinter import ttk, messagebox
 from watchdog.observers import Observer
@@ -8,10 +10,10 @@ from watchdog.events import FileSystemEventHandler
 import threading
 
 # --- 1. SETUP ---
+NETWORK_SOURCE = r'\\YOUR_NETWORK_PC\SharedFolder' 
 WATCH_FOLDER = r'C:\Users\user\Desktop\automate\LogFiles'
 REPORT_PATH = r'C:\Users\user\Desktop\Patient_Report.csv'
 
-# --- 2. TEST MAPPING (Updated: Removed hemolysis, ict, turbidity) ---
 TEST_MAP = {
     "768": "TOTAL BILIRUBIN", "220": "CONJUGATED (Direct)", "798": "UNCONJUGATED (Indirect)",
     "320": "AST / SGOT", "357": "ALT / SGPT", "321": "ALKALINE PHOSPHATASE",
@@ -26,15 +28,21 @@ TEST_MAP = {
 class SingletonPopup:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("🧬 Live Patient Records Monitor")
-        self.root.geometry("700x500")
+        self.root.title("🧬 Lab Monitor Pro")
+        self.root.geometry("750x550")
         self.root.attributes("-topmost", True)
         
-        style = ttk.Style()
-        style.configure("Treeview", font=('Segoe UI', 10), rowheight=25)
-        style.configure("Treeview.Heading", font=('Segoe UI', 11, 'bold'))
+        # --- Network Status Header ---
+        self.status_frame = tk.Frame(self.root, bg="#f0f0f0")
+        self.status_frame.pack(fill='x', padx=10, pady=5)
+        
+        self.status_dot = tk.Label(self.status_frame, text="●", fg="gray", font=("Arial", 14))
+        self.status_dot.pack(side=tk.LEFT)
+        
+        self.status_text = tk.Label(self.status_frame, text="Checking Network...", font=("Segoe UI", 10, "bold"))
+        self.status_text.pack(side=tk.LEFT, padx=5)
 
-        # Table
+        # Table Setup
         cols = ('Patient Name', 'Test Name', 'Result')
         self.tree = ttk.Treeview(self.root, columns=cols, show='headings')
         for col in cols:
@@ -42,104 +50,98 @@ class SingletonPopup:
             self.tree.column(col, width=200)
         self.tree.pack(expand=True, fill='both', padx=10, pady=10)
 
-        # Buttons Frame
+        # Buttons
         btn_frame = tk.Frame(self.root)
         btn_frame.pack(pady=10)
 
-        # Delete Button
-        btn_del = tk.Button(btn_frame, text="❌ DELETE SELECTED ROW", bg="#e74c3c", fg="white", 
-                            font=("Segoe UI", 10, "bold"), command=self.delete_row)
-        btn_del.pack(side=tk.LEFT, padx=10)
+        tk.Button(btn_frame, text="❌ DELETE SELECTED", bg="#e74c3c", fg="white", 
+                  font=("Segoe UI", 10, "bold"), command=self.delete_row).pack(side=tk.LEFT, padx=10)
+        
+        tk.Button(btn_frame, text="✅ SAVE & CLEAR", bg="#2ecc71", fg="white", 
+                  font=("Segoe UI", 10, "bold"), command=self.save_to_csv).pack(side=tk.LEFT, padx=10)
 
-        # Save Button
-        btn_save = tk.Button(btn_frame, text="✅ SAVE ALL TO REPORT & CLEAR", bg="#2ecc71", fg="white", 
-                             font=("Segoe UI", 10, "bold"), command=self.save_to_csv)
-        btn_save.pack(side=tk.LEFT, padx=10)
+    def update_status(self, online=True):
+        """Changes the UI indicator color based on network availability"""
+        if online:
+            self.status_dot.config(fg="#2ecc71") # Green
+            self.status_text.config(text=f"NETWORK ONLINE: {NETWORK_SOURCE}", fg="#27ae60")
+        else:
+            self.status_dot.config(fg="#e74c3c") # Red
+            self.status_text.config(text="NETWORK OFFLINE - Check Connection", fg="#c0392b")
 
     def add_records(self, records):
-        """Adds new data to the bottom of the table without refreshing the window"""
         for rec in records:
             self.tree.insert("", "end", values=rec)
-        self.root.bell() # Subtle beep when new data arrives
+        self.root.bell()
 
     def delete_row(self):
-        selected_item = self.tree.selection()
-        if selected_item:
-            self.tree.delete(selected_item)
-        else:
-            messagebox.showwarning("Select Row", "Please click on a row first to delete it.")
+        selected = self.tree.selection()
+        if selected: self.tree.delete(selected)
 
     def save_to_csv(self):
-        all_items = self.tree.get_children()
-        if not all_items:
-            messagebox.showinfo("Empty", "No records to save.")
-            return
-
+        items = self.tree.get_children()
+        if not items: return
         file_exists = os.path.isfile(REPORT_PATH)
         with open(REPORT_PATH, 'a', newline='') as f:
             writer = csv.writer(f)
             if not file_exists:
                 writer.writerow(['Date/Time', 'Patient Name', 'Test Name', 'Result'])
-            
-            timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-            for item in all_items:
-                row_values = self.tree.item(item)['values']
-                writer.writerow([timestamp] + list(row_values))
-        
-        # Clear table after saving
-        for item in all_items:
-            self.tree.delete(item)
-        messagebox.showinfo("Success", "Records saved to Patient_Report.csv")
+            ts = time.strftime("%Y-%m-%d %H:%M:%S")
+            for i in items:
+                writer.writerow([ts] + list(self.tree.item(i)['values']))
+        for i in items: self.tree.delete(i)
+        messagebox.showinfo("Success", "Data Saved.")
 
     def run(self):
         self.root.mainloop()
 
-# Global variable to hold our single window instance
 ui = None
 
 class MedicalHandler(FileSystemEventHandler):
     def on_created(self, event):
         if event.is_directory: return
-        time.sleep(1.5)
-        
+        time.sleep(1)
         try:
             valid_rows = []
             with open(event.src_path, 'r', encoding='utf-8', errors='ignore') as f:
                 for line in f:
                     parts = [p.strip() for p in line.split('\t')]
                     if len(parts) >= 6:
-                        name, tid, res = parts[1], parts[4], parts[5]
-                        
-                        # Only add if the test ID is in our map (skips hemolysis, etc.)
-                        if tid in TEST_MAP and any(char.isalpha() for char in name) and "No Result" not in res:
-                            test_name = TEST_MAP[tid]
-                            valid_rows.append((name, test_name, res))
-
+                        name, tid, res = parts[1], parts[4], parts[5] # Fixed indexing from original code
+                        if tid in TEST_MAP and any(c.isalpha() for c in name) and "No Result" not in res:
+                            valid_rows.append((name, TEST_MAP[tid], res))
             if valid_rows and ui:
-                # Add data to the existing window using a thread-safe method
                 ui.root.after(0, ui.add_records, valid_rows)
-        except Exception as e:
-            print(f"Error reading file: {e}")
+        except: pass
 
-def start_observer():
-    observer = Observer()
-    observer.schedule(MedicalHandler(), WATCH_FOLDER, recursive=False)
-    observer.start()
-    try:
-        while True: time.sleep(1)
-    except:
-        observer.stop()
-    observer.join()
+def sync_task():
+    """Syncs today's files and updates UI status indicator"""
+    while True:
+        is_online = os.path.exists(NETWORK_SOURCE)
+        
+        # Update the UI indicator via thread-safe method
+        if ui:
+            ui.root.after(0, ui.update_status, is_online)
+            
+        if is_online:
+            try:
+                today_str = datetime.datetime.now().strftime("%m%d%Y")
+                for f in os.listdir(NETWORK_SOURCE):
+                    if f.startswith(today_str):
+                        src, dst = os.path.join(NETWORK_SOURCE, f), os.path.join(WATCH_FOLDER, f)
+                        if os.path.isfile(src) and not os.path.exists(dst):
+                            shutil.copy2(src, dst)
+            except: pass
+        
+        time.sleep(10) # Status updates every 10 seconds
 
 if __name__ == "__main__":
     if not os.path.exists(WATCH_FOLDER): os.makedirs(WATCH_FOLDER)
-    print(f"🚀 System Online. Watching: {WATCH_FOLDER}")
-    
-    # Initialize the single UI window
     ui = SingletonPopup()
+    threading.Thread(target=sync_task, daemon=True).start()
     
-    # Start the folder watcher in a separate thread so it doesn't freeze the window
-    threading.Thread(target=start_observer, daemon=True).start()
+    observer = Observer()
+    observer.schedule(MedicalHandler(), WATCH_FOLDER, recursive=False)
+    observer.start()
     
-    # Run the window
     ui.run()
