@@ -1,0 +1,36 @@
+{
+    "critical_ranges": {
+        "SODIUM (NA+)": {
+            "low": 120,
+            "high": 155
+        },
+        "POTASSIUM (K+)": {
+            "low": 3.5,
+            "high": 6.5
+        },
+        "GLUCOSE": {
+            "low": 70,
+            "high": 250
+        },
+        "SERUM CREATININE": {
+            "high": 2.0
+        },
+        "TOTAL BILIRUBIN": {
+            "high": 2.0
+        },
+        "AST / SGOT": {
+            "high": 100
+        },
+        "ALT / SGPT": {
+            "high": 100
+        },
+        "PLATELETS": {
+            "low": 150,
+            "high": 450
+        },
+        "PLATELET COUNT": {
+            "low": 150,
+            "high": 450
+        }
+    }
+}
