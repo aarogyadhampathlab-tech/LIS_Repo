@@ -4,6 +4,7 @@ from tkinter import ttk, messagebox
 import csv
 import os
 import time
+import queue
 import winsound
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -17,12 +18,28 @@ except ImportError:
     CRITICAL_RANGES = {}
     TECHNICAL_ERROR_KEYWORDS = []
 
+COLORS = {
+    "background": "#F3F6F5",
+    "surface": "#FFFFFF",
+    "surface_alt": "#EAF0EE",
+    "border": "#D9E3E0",
+    "text": "#263632",
+    "muted": "#71817C",
+    "accent": "#28796F",
+    "accent_hover": "#21675F",
+    "accent_soft": "#DCEDE9",
+    "online": "#287A55",
+    "offline": "#B34D48",
+    "warning": "#A66A1C",
+}
+
 # --- 1. NOTIFICATION MANAGER ---
 class NotificationManager:
     def __init__(self):
         self.notifications = []
         self.notification_window = None
         self.drag_data = {"x": 0, "y": 0}
+        self.collapsed = False
 
     def show(self, patient_name, test_name, result, a1c_result=None, root=None):
         """Add a new notification and display all stacked."""
@@ -62,15 +79,26 @@ class NotificationManager:
         self.notification_window = tk.Toplevel(root)
         self.notification_window.overrideredirect(True)
         self.notification_window.attributes("-topmost", True)
-        self.notification_window.configure(bg="#0f172a")
+        self.notification_window.configure(bg=COLORS["background"])
 
         # Main container
-        main_frame = tk.Frame(self.notification_window, bg="#0f172a")
+        main_frame = tk.Frame(self.notification_window, bg=COLORS["background"])
         main_frame.pack(fill='both', expand=True)
 
+        toolbar = tk.Frame(main_frame, bg=COLORS["background"])
+        toolbar.pack(fill='x', padx=5, pady=(5, 0))
+        tk.Label(toolbar, text="GLUCOSE ALERTS", fg=COLORS["accent"], bg=COLORS["background"],
+                 font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=5)
+        tk.Button(toolbar, text="+" if self.collapsed else "−",
+              command=self._toggle_collapsed, bg=COLORS["surface_alt"], fg=COLORS["text"],
+              activebackground=COLORS["border"], activeforeground=COLORS["text"],
+              relief="flat", bd=0, font=("Segoe UI", 10, "bold"),
+                  width=2, cursor="hand2").pack(side=tk.RIGHT, padx=2)
+
         # Add each notification
-        for idx, notif in enumerate(self.notifications):
-            self._add_notification_item(main_frame, idx, notif)
+        if not self.collapsed:
+            for idx, notif in enumerate(self.notifications):
+                self._add_notification_item(main_frame, idx, notif)
 
         # Position Bottom-Left
         self.notification_window.update_idletasks()
@@ -83,26 +111,31 @@ class NotificationManager:
         main_frame.bind("<Button-1>", self._on_drag_start)
         main_frame.bind("<B1-Motion>", self._on_drag_motion)
 
+    def _toggle_collapsed(self):
+        self.collapsed = not self.collapsed
+        if self.notification_window:
+            self._refresh_window(self.notification_window.master)
+
     def _add_notification_item(self, parent, idx, notif):
         """Add a single notification item with close button and optional A1C."""
         # Notification frame
-        item_frame = tk.Frame(parent, bg="#1e293b")
+        item_frame = tk.Frame(parent, bg=COLORS["surface_alt"])
         item_frame.pack(fill='x', padx=5, pady=5)
 
         # Header with patient and test info
-        header = tk.Frame(item_frame, bg="#1e293b")
+        header = tk.Frame(item_frame, bg=COLORS["surface_alt"])
         header.pack(fill='x', padx=8, pady=5)
 
         # Left side: Patient, Test, Glucose, and A1C all in one row
-        info_text = f"👤 {notif['patient']} | 🧪 {notif['test']} | 📊 {notif['result']}"
+        info_text = f"{notif['patient']}  |  {notif['test']}  |  {notif['result']}"
         if notif['a1c']:
-            info_text += f" | 🩸 A1C: {notif['a1c']}"
+            info_text += f"  |  A1C: {notif['a1c']}"
         
-        tk.Label(header, text=info_text, fg="white", bg="#1e293b", 
+        tk.Label(header, text=info_text, fg=COLORS["text"], bg=COLORS["surface_alt"], 
                  font=("Segoe UI", 9, "bold"), wraplength=500, justify='left').pack(side=tk.LEFT, expand=True, anchor='w')
 
         # Close button
-        close_btn = tk.Label(header, text="✕", fg="#94a3b8", bg="#1e293b", 
+        close_btn = tk.Label(header, text="×", fg=COLORS["muted"], bg=COLORS["surface_alt"], 
                              font=("Arial", 10, "bold"), cursor="hand2")
         close_btn.pack(side=tk.RIGHT, padx=5)
         close_btn.bind("<Button-1>", lambda e, i=idx: self._close_notification(i))
@@ -138,10 +171,12 @@ class FolderWatcher(FileSystemEventHandler):
 class LabApp:
     def __init__(self, root):
         self.root = root
-        self.root.title(" Lab Monitor Pro 🧬")
-        self.root.geometry("1000x850")
-        self.root.configure(bg="#0f172a")
+        self.root.title("LIS Lab Monitor")
+        self.root.geometry("1080x820")
+        self.root.minsize(800, 620)
+        self.root.configure(bg=COLORS["background"])
         self.root.attributes("-topmost", True)
+        self.activity_queue = queue.Queue()
         
         self.all_records = []
         self.notified_records = set()  # Track which records have been notified
@@ -153,6 +188,8 @@ class LabApp:
         self._build_table()
         self._build_context_menu()
         self._build_buttons()
+        self._build_activity_log()
+        self.root.after(100, self._flush_activity_log)
 
         # Start Folder Watching (Update this path to your needs)
         self.start_folder_watch("./") 
@@ -160,72 +197,100 @@ class LabApp:
     def _setup_styles(self):
         style = ttk.Style()
         style.theme_use("clam")
-        style.configure("Treeview", background="#1e293b", foreground="#e2e8f0", 
-                        rowheight=40, fieldbackground="#1e293b", borderwidth=0, 
+        style.configure("Treeview", background=COLORS["surface"], foreground=COLORS["text"],
+                        rowheight=34, fieldbackground=COLORS["surface"], borderwidth=0,
                         font=("Segoe UI", 10))
-        style.configure("Treeview.Heading", background="#334155", foreground="#38bdf8", 
-                        font=("Segoe UI", 10, "bold"), borderwidth=0)
-        style.map("Treeview", background=[('selected', '#0ea5e9')])
+        style.configure("Treeview.Heading", background=COLORS["surface_alt"],
+                        foreground=COLORS["muted"], font=("Segoe UI", 9, "bold"),
+                        borderwidth=0, padding=(10, 9))
+        style.map("Treeview", background=[("selected", COLORS["accent_soft"])],
+                  foreground=[("selected", COLORS["text"])])
+        style.configure("Vertical.TScrollbar", background=COLORS["surface_alt"],
+                        troughcolor=COLORS["background"], bordercolor=COLORS["background"],
+                        arrowcolor=COLORS["muted"])
 
     def _build_glossy_header(self):
-        tk.Frame(self.root, bg="#0ea5e9", height=4).pack(fill='x')
-        header = tk.Frame(self.root, bg="#1e293b", height=80)
-        header.pack(fill='x')
-        title_frame = tk.Frame(header, bg="#1e293b")
-        title_frame.pack(side=tk.LEFT, padx=30, pady=15)
-        tk.Label(title_frame, text="LAB AUTOMATION", fg="#38bdf8", bg="#1e293b",
-                 font=("Segoe UI", 18, "bold")).pack(anchor='w')
-        tk.Label(title_frame, text="ADVANCED ANALYTICS SYSTEM", fg="#94a3b8", 
-                 bg="#1e293b", font=("Segoe UI", 8, "bold")).pack(anchor='w')
+        header = tk.Frame(self.root, bg=COLORS["surface"], height=88,
+                          highlightthickness=1, highlightbackground=COLORS["border"])
+        header.pack(fill="x")
+        header.pack_propagate(False)
+        mark = tk.Canvas(header, width=42, height=42, bg=COLORS["surface"],
+                         highlightthickness=0)
+        mark.pack(side=tk.LEFT, padx=(28, 12), pady=20)
+        mark.create_line(14, 7, 28, 7, 28, 17, 35, 33, 7, 33, 14, 17, 14, 7,
+                         fill=COLORS["accent"], width=2, joinstyle="round")
+        mark.create_polygon(12, 27, 30, 27, 33, 32, 9, 32,
+                            fill=COLORS["accent_soft"], outline="")
+        mark.create_line(16, 7, 26, 7, fill=COLORS["accent"], width=2)
+        title_frame = tk.Frame(header, bg=COLORS["surface"])
+        title_frame.pack(side=tk.LEFT, pady=15)
+        tk.Label(title_frame, text="LIS LAB MONITOR", fg=COLORS["text"],
+                 bg=COLORS["surface"], font=("Segoe UI Semibold", 16)).pack(anchor="w")
+        tk.Label(title_frame, text="LABORATORY RESULTS", fg=COLORS["muted"],
+                 bg=COLORS["surface"], font=("Segoe UI", 9)).pack(anchor="w", pady=(2, 0))
 
     def _build_status_bar(self):
-        self.status_frame = tk.Frame(self.root, bg="#0f172a")
-        self.status_frame.pack(fill='x', padx=30, pady=10)
-        self.status_dot = tk.Label(self.status_frame, text="●", fg="#ef4444", 
-                                   font=("Arial", 14), bg="#0f172a")
+        self.status_frame = tk.Frame(self.root, bg=COLORS["background"])
+        self.status_frame.pack(fill="x", padx=30, pady=(18, 10))
+        self.status_dot = tk.Label(self.status_frame, text="●", fg=COLORS["offline"],
+                                   font=("Arial", 11), bg=COLORS["background"])
         self.status_dot.pack(side=tk.LEFT)
-        self.status_text = tk.Label(self.status_frame, text="SYSTEM OFFLINE", 
-                                    fg="#ef4444", font=("Segoe UI", 9, "bold"), bg="#0f172a")
-        self.status_text.pack(side=tk.LEFT, padx=8)
-        self.alert_text = tk.Label(self.status_frame, text="", 
-                                   fg="#facc15", font=("Segoe UI", 9, "bold"), bg="#0f172a")
+        self.status_text = tk.Label(self.status_frame, text="OFFLINE",
+                                    fg=COLORS["offline"], font=("Segoe UI", 9, "bold"),
+                                    bg=COLORS["background"])
+        self.status_text.pack(side=tk.LEFT, padx=(6, 8))
+        self.alert_text = tk.Label(self.status_frame, text="", fg=COLORS["warning"],
+                                   font=("Segoe UI", 9, "bold"), bg=COLORS["background"])
         self.alert_text.pack(side=tk.RIGHT)
 
     def _build_filters(self):
-        filter_container = tk.Frame(self.root, bg="#0f172a")
-        filter_container.pack(fill='x', padx=30, pady=5)
+        filter_container = tk.Frame(self.root, bg=COLORS["background"])
+        filter_container.pack(fill="x", padx=30, pady=(4, 10))
         
-        # Patient Search
-        p_frame = tk.Frame(filter_container, bg="#1e293b", padx=10, pady=5)
-        p_frame.pack(side=tk.LEFT, expand=True, fill='x', padx=(0, 5))
-        tk.Label(p_frame, text="👤 Patient:", fg="#38bdf8", bg="#1e293b", font=("Segoe UI", 8, "bold")).pack(side=tk.LEFT)
+        p_frame = tk.Frame(filter_container, bg=COLORS["surface"], padx=12, pady=8,
+                           highlightthickness=1, highlightbackground=COLORS["border"])
+        p_frame.pack(side=tk.LEFT, expand=True, fill="x", padx=(0, 6))
+        tk.Label(p_frame, text="PATIENT", fg=COLORS["muted"], bg=COLORS["surface"],
+                 font=("Segoe UI", 8, "bold")).pack(side=tk.LEFT)
         self.search_pat = tk.StringVar()
         self.search_pat.trace_add("write", self.filter_data)
-        tk.Entry(p_frame, textvariable=self.search_pat, bg="#0f172a", fg="white", borderwidth=0, insertbackground="white").pack(side=tk.LEFT, padx=10, fill='x', expand=True)
+        tk.Entry(p_frame, textvariable=self.search_pat, bg=COLORS["surface"],
+                 fg=COLORS["text"], borderwidth=0, relief="flat", insertbackground=COLORS["accent"],
+                 font=("Segoe UI", 10)).pack(side=tk.LEFT, padx=(14, 4), fill="x", expand=True)
 
-        # Test Search
-        t_frame = tk.Frame(filter_container, bg="#1e293b", padx=10, pady=5)
-        t_frame.pack(side=tk.LEFT, expand=True, fill='x', padx=(5, 0))
-        tk.Label(t_frame, text="🧪 Test:", fg="#38bdf8", bg="#1e293b", font=("Segoe UI", 8, "bold")).pack(side=tk.LEFT)
+        t_frame = tk.Frame(filter_container, bg=COLORS["surface"], padx=12, pady=8,
+                           highlightthickness=1, highlightbackground=COLORS["border"])
+        t_frame.pack(side=tk.LEFT, expand=True, fill="x", padx=(6, 0))
+        tk.Label(t_frame, text="TEST", fg=COLORS["muted"], bg=COLORS["surface"],
+                 font=("Segoe UI", 8, "bold")).pack(side=tk.LEFT)
         self.search_test = tk.StringVar()
         self.search_test.trace_add("write", self.filter_data)
-        tk.Entry(t_frame, textvariable=self.search_test, bg="#0f172a", fg="white", borderwidth=0, insertbackground="white").pack(side=tk.LEFT, padx=10, fill='x', expand=True)
+        tk.Entry(t_frame, textvariable=self.search_test, bg=COLORS["surface"],
+                 fg=COLORS["text"], borderwidth=0, relief="flat", insertbackground=COLORS["accent"],
+                 font=("Segoe UI", 10)).pack(side=tk.LEFT, padx=(14, 4), fill="x", expand=True)
 
     def _build_table(self):
-        table_frame = tk.Frame(self.root, bg="#334155", padx=1, pady=1)
-        table_frame.pack(expand=True, fill='both', padx=30, pady=10)
+        table_frame = tk.Frame(self.root, bg=COLORS["surface"], padx=1, pady=1,
+                               highlightthickness=1, highlightbackground=COLORS["border"])
+        table_frame.pack(expand=True, fill="both", padx=30, pady=(0, 12))
         cols = ('Test Name', 'Result')
         self.tree = ttk.Treeview(table_frame, columns=cols, show='tree headings', selectmode="extended")
-        self.tree.heading('#0', text='PATIENT LIST (Right-click to Delete)')
-        self.tree.heading('Test Name', text='TEST TYPE')
-        self.tree.heading('Result', text='RESULT')
-        self.tree.column('#0', width=400)
-        self.tree.pack(expand=True, fill='both')
+        self.tree.heading('#0', text="PATIENT", anchor="w")
+        self.tree.heading('Test Name', text="TEST TYPE", anchor="w")
+        self.tree.heading('Result', text="RESULT", anchor="w")
+        self.tree.column('#0', width=400, minwidth=220)
+        self.tree.column('Test Name', width=300, minwidth=180)
+        self.tree.column('Result', width=180, minwidth=120)
+        scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        self.tree.pack(side="left", expand=True, fill="both", padx=(8, 0), pady=6)
+        scrollbar.pack(side="right", fill="y", pady=6, padx=(0, 4))
         self.tree.bind("<Button-3>", self._show_context_menu)
 
     def _build_context_menu(self):
-        self.menu = tk.Menu(self.root, tearoff=0, bg="#1e293b", fg="white")
-        self.menu.add_command(label="❌ Delete Selected Patient", command=self.delete_individual)
+        self.menu = tk.Menu(self.root, tearoff=0, bg=COLORS["surface"], fg=COLORS["text"],
+                            activebackground=COLORS["accent_soft"], activeforeground=COLORS["text"])
+        self.menu.add_command(label="Delete selected patient", command=self.delete_individual)
 
     def _show_context_menu(self, event):
         item = self.tree.identify_row(event.y)
@@ -234,11 +299,49 @@ class LabApp:
             self.menu.post(event.x_root, event.y_root)
 
     def _build_buttons(self):
-        btn_frame = tk.Frame(self.root, bg="#0f172a")
-        btn_frame.pack(pady=20)
-        tk.Button(btn_frame, text="SAVE & CLEAR REPORT", bg="#064e3b", fg="#6ee7b7", 
-                  font=("Segoe UI", 9, "bold"), relief="flat", command=self.save_to_csv, 
-                  padx=30, pady=10, cursor="hand2").pack()
+        btn_frame = tk.Frame(self.root, bg=COLORS["background"])
+        btn_frame.pack(fill="x", padx=30, pady=(0, 12))
+        tk.Button(btn_frame, text="Save report and clear", bg=COLORS["accent"],
+                  fg=COLORS["surface"], activebackground=COLORS["accent_hover"],
+                  activeforeground=COLORS["surface"], font=("Segoe UI", 9, "bold"),
+                  relief="flat", bd=0, command=self.save_to_csv, padx=18, pady=9,
+                  cursor="hand2").pack(side="right")
+
+    def _build_activity_log(self):
+        activity_frame = tk.Frame(self.root, bg=COLORS["background"])
+        activity_frame.pack(fill="x", padx=30, pady=(0, 18))
+        tk.Label(activity_frame, text="FILE ACTIVITY", fg=COLORS["muted"],
+                 bg=COLORS["background"], font=("Segoe UI", 8, "bold")).pack(anchor="w", pady=(0, 5))
+        log_content = tk.Frame(activity_frame, bg=COLORS["surface"],
+                               highlightthickness=1, highlightbackground=COLORS["border"])
+        log_content.pack(fill="x")
+        self.activity_text = tk.Text(log_content, height=4, bg=COLORS["surface"],
+                                     fg=COLORS["muted"], insertbackground=COLORS["accent"],
+                                     relief="flat", wrap="word", padx=10, pady=8,
+                                     font=("Consolas", 9), state="disabled")
+        scrollbar = ttk.Scrollbar(log_content, orient="vertical", command=self.activity_text.yview)
+        self.activity_text.configure(yscrollcommand=scrollbar.set)
+        self.activity_text.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+    def _flush_activity_log(self):
+        messages = []
+        while True:
+            try:
+                messages.append(self.activity_queue.get_nowait())
+            except queue.Empty:
+                break
+
+        if messages:
+            self.activity_text.config(state="normal")
+            self.activity_text.insert("end", "".join(messages))
+            self.activity_text.see("end")
+            self.activity_text.config(state="disabled")
+
+        self.root.after(100, self._flush_activity_log)
+
+    def queue_activity_text(self, text):
+        self.activity_queue.put(text)
 
     def filter_data(self, *args):
         for i in self.tree.get_children(): self.tree.delete(i)
@@ -254,7 +357,7 @@ class LabApp:
         for patient_name, tests in grouped.items():
             # 🕒 FEATURE: Time added to Patient Row
             entry_time = time.strftime("%H:%M:%S")
-            parent = self.tree.insert("", "end", text=f" [{entry_time}] 👤 {patient_name}", open=False)
+            parent = self.tree.insert("", "end", text=f"[{entry_time}]  {patient_name}", open=False)
             
             glucose_result = None
             a1c_result = None
@@ -306,7 +409,7 @@ class LabApp:
         return any(keyword in lowered for keyword in TECHNICAL_ERROR_KEYWORDS)
 
     def _update_alert_status(self, text):
-        self.alert_text.config(text=text, fg="#f87171")
+        self.alert_text.config(text=text, fg=COLORS["offline"])
         self.root.after(10000, lambda: self.alert_text.config(text=""))
 
     def _show_alert(self, patient_name, test_name, result, alert_reason):
@@ -349,18 +452,18 @@ class LabApp:
     def update_network_status(self, online, path):
         """Update the network status indicator in the UI."""
         if online:
-            self.status_dot.config(fg="#22c55e")  # Green
-            self.status_text.config(text="SYSTEM ONLINE", fg="#22c55e")
+            self.status_dot.config(fg=COLORS["online"])
+            self.status_text.config(text="ONLINE", fg=COLORS["online"])
         else:
-            self.status_dot.config(fg="#ef4444")  # Red
-            self.status_text.config(text="SYSTEM OFFLINE", fg="#ef4444")
+            self.status_dot.config(fg=COLORS["offline"])
+            self.status_text.config(text="OFFLINE", fg=COLORS["offline"])
 
     def delete_individual(self):
         selected = self.tree.selection()
         if not selected: return
         # Logic to extract name even with the timestamp prefix
         item_text = self.tree.item(selected[0])['text']
-        raw_name = item_text.split("👤")[-1].strip()
+        raw_name = item_text.split("] ", 1)[-1].strip()
         # Remove from both records and notification tracking
         self.all_records = [r for r in self.all_records if r[0] != raw_name]
         self.notified_records = {record for record in self.notified_records if record[0] != raw_name}
