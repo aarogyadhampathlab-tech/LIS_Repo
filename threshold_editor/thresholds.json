@@ -1,36 +1,35 @@
 {
+    "_note": "DEMO ALERT TRIGGERS ONLY, not validated critical limits or reference ranges. Confirm thresholds, units and alert policy with the laboratory director before clinical use. Edit critical_ranges to add or change alert ranges.",
     "critical_ranges": {
         "SODIUM (NA+)": {
-            "low": 120,
-            "high": 155
+            "low": 130,
+            "high": 155,
+            "unit": "mmol/L"
         },
         "POTASSIUM (K+)": {
             "low": 3.5,
-            "high": 6.5
+            "high": 6.5,
+            "unit": "mmol/L"
         },
         "GLUCOSE": {
-            "low": 70,
-            "high": 250
+            "high": 250,
+            "unit": "mg/dL"
         },
         "SERUM CREATININE": {
-            "high": 2.0
+            "high": 2.0,
+            "unit": "mg/dL"
         },
         "TOTAL BILIRUBIN": {
-            "high": 2.0
+            "high": 2.0,
+            "unit": "mg/dL"
         },
         "AST / SGOT": {
-            "high": 100
+            "high": 100,
+            "unit": "U/L"
         },
         "ALT / SGPT": {
-            "high": 100
-        },
-        "PLATELETS": {
-            "low": 150,
-            "high": 450
-        },
-        "PLATELET COUNT": {
-            "low": 150,
-            "high": 450
+            "high": 100,
+            "unit": "U/L"
         }
     }
 }

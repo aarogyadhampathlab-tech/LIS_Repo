@@ -1,4 +1,7 @@
-import os
+import json
+from pathlib import Path
+
+from alert_rules import load_alert_rules
 
 # --- 1. NETWORK & PATH SETTINGS ---
 NETWORK_SOURCE = r'\\192.168.1.103\log1' 
@@ -17,16 +20,39 @@ TEST_MAP = {
     "927": "a1c","306":"amylase", "325": "lipase", "910": "GLOBULIN"
 }
 
-# --- 3. CRITICAL VALUE RANGES ---
+# --- 3. DEMO ALERT RANGES (edit threshold_editor/thresholds.json) ---
+ALERT_RULES = load_alert_rules()
 CRITICAL_RANGES = {
-    "SODIUM (Na+)": {"low": 120, "high": 155},
-    "POTASSIUM (K+)": {"low": 3.5, "high": 6.5},
-    "GLUCOSE": {"high": 250},
-    "SERUM CREATININE": {"high": 2.0},
-    "TOTAL BILIRUBIN": {"high": 2.0},
-    "AST / SGOT": {"high": 100},
-    "ALT / SGPT": {"high": 100},
+    test_name: {bound: value for bound, value in rule.items() if bound in ("low", "high")}
+    for test_name, rule in ALERT_RULES.items()
 }
+
+
+def get_critical_ranges():
+    return load_alert_rules()
+
+
+def save_critical_ranges(critical_ranges):
+    existing = load_alert_rules()
+    updated = {}
+    for test_name, thresholds in critical_ranges.items():
+        rule = dict(thresholds)
+        if test_name in existing:
+            rule.setdefault("unit", existing[test_name].get("unit", ""))
+        updated[test_name] = rule
+
+    configuration_path = (
+        Path(__file__).parent / "threshold_editor" / "thresholds.json"
+    )
+    with configuration_path.open("w", encoding="utf-8") as rules_file:
+        json.dump({
+            "_note": (
+                "DEMO ALERT TRIGGERS ONLY. Confirm thresholds and units with "
+                "the laboratory director before clinical use."
+            ),
+            "critical_ranges": updated,
+        }, rules_file, indent=4)
+        rules_file.write("\n")
 
 TECHNICAL_ERROR_KEYWORDS = [
     "no result", "no-result", "technical error", "tech error", "error", "failed", "invalid", "timeout"

@@ -1,8 +1,16 @@
 import csv
+import hashlib
+import io
+import json
+import math
 import re
+import struct
 import time
+import wave
+from datetime import datetime
+from pathlib import Path
 
-from PySide6.QtCore import QEvent, Qt, QTimer, Signal, Slot
+from PySide6.QtCore import QEvent, QPoint, QStandardPaths, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QColor, QIcon, QMouseEvent, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -17,6 +25,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QStyle,
     QTreeWidget,
@@ -30,12 +39,9 @@ try:
 except ImportError:
     winsound = None
 
-try:
-    from config import CRITICAL_RANGES, REPORT_PATH, TECHNICAL_ERROR_KEYWORDS
-except ImportError:
-    REPORT_PATH = "lab_reports.csv"
-    CRITICAL_RANGES = {}
-    TECHNICAL_ERROR_KEYWORDS = []
+from config import CRITICAL_RANGES, REPORT_PATH, TECHNICAL_ERROR_KEYWORDS
+
+from alert_store import AlertStore
 
 
 COLORS = {
@@ -55,9 +61,12 @@ COLORS = {
 
 
 class DraggableDialog(QDialog):
+    drag_position_changed = Signal(object)
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._drag_offset = None
+        self._dragged = False
 
     def add_drag_area(self, widget):
         widget.installEventFilter(self)
@@ -68,15 +77,21 @@ class DraggableDialog(QDialog):
         if isinstance(event, QMouseEvent):
             if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
                 self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+                self._dragged = False
             elif (
                 event.type() == QEvent.Type.MouseMove
                 and self._drag_offset is not None
                 and event.buttons() & Qt.MouseButton.LeftButton
             ):
                 self.move(event.globalPosition().toPoint() - self._drag_offset)
+                self._dragged = True
+                self.drag_position_changed.emit(self.frameGeometry().topLeft())
                 return True
             elif event.type() == QEvent.Type.MouseButtonRelease:
                 self._drag_offset = None
+                if self._dragged:
+                    self._dragged = False
+                    return True
         return super().eventFilter(watched, event)
 
 
@@ -172,16 +187,32 @@ class LabApp(QMainWindow):
         self.all_records = []
         self.notified_records = set()
         self.alerted_records = set()
+        data_directory = QStandardPaths.writableLocation(
+            QStandardPaths.StandardLocation.AppLocalDataLocation
+        )
+        if not data_directory:
+            data_directory = str(Path.home() / ".lis_lab_monitor")
+        self.alert_store = AlertStore(Path(data_directory) / "alerts.sqlite3")
+        self.emergency_alert_sound = Path(data_directory) / "emergency_alert.wav"
+        self.emergency_alert_sound.write_bytes(self._build_emergency_alert_sound())
+        self.alerted_records.update(self.alert_store.known_alert_keys())
+        self.active_alerts = self.alert_store.unacknowledged_alerts()
+        self.alert_sound_timer = QTimer(self)
+        self.alert_sound_timer.setInterval(3200)
+        self.alert_sound_timer.timeout.connect(self._play_alert_sound)
         self.notification_window = None
         self.notification_rows = {}
+        self.inline_notification_rows = {}
         self.notification_counter = 0
         self.notification_collapsed = False
         self.notification_maximized = False
+        self.notification_position = None
         self.records_received.connect(self._append_records)
         self.network_status_received.connect(self._set_network_status)
         self.activity_received.connect(self._append_activity)
 
         self._build_interface()
+        self._refresh_active_alerts()
         self.filter_data()
 
     def _application_stylesheet(self):
@@ -300,9 +331,11 @@ class LabApp(QMainWindow):
         layout.setSpacing(15)
 
         layout.addWidget(self._build_header())
+        layout.addWidget(self._build_glucose_inline_panel())
         layout.addLayout(self._build_search_row())
         layout.addWidget(self._build_results(), 1)
         layout.addLayout(self._build_footer())
+        self._build_alert_card()
 
     def _build_header(self):
         header = QFrame()
@@ -337,7 +370,104 @@ class LabApp(QMainWindow):
         self.alert_label.setMaximumWidth(310)
         self.alert_label.setStyleSheet(f"color: {COLORS['warning']}; font-weight: 600;")
         row.addWidget(self.alert_label)
+        self.demo_alert_button = QPushButton("Trigger Demo Alert")
+        self.demo_alert_button.setToolTip(
+            "Create a clearly labeled test alert to check sound and acknowledgment."
+        )
+        self.demo_alert_button.clicked.connect(self._trigger_demo_alert)
+        row.addWidget(self.demo_alert_button)
+        self.demo_missing_button = QPushButton("Trigger Missing Demo")
+        self.demo_missing_button.setToolTip(
+            "Create a test-only MISSING_RESULT alert."
+        )
+        self.demo_missing_button.clicked.connect(self._trigger_demo_missing_alert)
+        row.addWidget(self.demo_missing_button)
         return header
+
+    def _build_alert_card(self):
+        self.alert_card = DraggableDialog(
+            None,
+            Qt.WindowType.Tool
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.FramelessWindowHint,
+        )
+        self.alert_card.setObjectName("criticalAlertPanel")
+        self.alert_card.setWindowTitle("Critical LIS alerts")
+        self.alert_card.setWindowIcon(self.windowIcon())
+        self.alert_card.setMinimumWidth(390)
+        self.alert_card.setMaximumWidth(440)
+        self.alert_card.setStyleSheet(
+            f"QDialog#criticalAlertPanel {{ background: {COLORS['surface']}; "
+            f"border: 1px solid {COLORS['offline']}; border-radius: 12px; }}"
+        )
+        panel_layout = QVBoxLayout(self.alert_card)
+        panel_layout.setContentsMargins(10, 8, 10, 10)
+        panel_layout.setSpacing(7)
+
+        self.alert_heading = QLabel("CRITICAL ALERTS")
+        self.alert_heading.setStyleSheet(
+            f"color: {COLORS['offline']}; font-size: 10pt; font-weight: 900;"
+        )
+        self.alert_queue_label = QLabel()
+        self.alert_queue_label.setStyleSheet(f"color: {COLORS['muted']}; font-size: 8pt;")
+        self.alert_panel_header = QFrame()
+        header_layout = QHBoxLayout(self.alert_panel_header)
+        header_layout.setContentsMargins(4, 2, 4, 2)
+        header_layout.addWidget(self.alert_heading)
+        header_layout.addStretch(1)
+        header_layout.addWidget(self.alert_queue_label)
+        panel_layout.addWidget(self.alert_panel_header)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setMaximumHeight(330)
+        self.alert_panel_body = QWidget()
+        self.alert_panel_body_layout = QVBoxLayout(self.alert_panel_body)
+        self.alert_panel_body_layout.setContentsMargins(0, 0, 0, 0)
+        self.alert_panel_body_layout.setSpacing(6)
+        scroll.setWidget(self.alert_panel_body)
+        panel_layout.addWidget(scroll)
+        self.alert_panel_header.installEventFilter(self.alert_card)
+        self.alert_card.add_drag_area(self.alert_heading)
+        self.alert_card.add_drag_area(self.alert_queue_label)
+        self.alert_card.hide()
+
+        shadow = QGraphicsDropShadowEffect(self.alert_card)
+        shadow.setBlurRadius(24)
+        shadow.setOffset(0, 5)
+        shadow.setColor(QColor(0, 0, 0, 150))
+        self.alert_card.setGraphicsEffect(shadow)
+
+    def _build_glucose_inline_panel(self):
+        panel = QFrame()
+        panel.setObjectName("surface")
+        layout = QHBoxLayout(panel)
+        layout.setContentsMargins(12, 7, 12, 7)
+        layout.setSpacing(10)
+
+        heading = QLabel("GLUCOSE")
+        heading.setStyleSheet(
+            f"color: {COLORS['accent']}; font-size: 8pt; font-weight: 800;"
+        )
+        layout.addWidget(heading)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setFixedHeight(52)
+        self.glucose_inline_content = QWidget()
+        self.glucose_inline_layout = QHBoxLayout(self.glucose_inline_content)
+        self.glucose_inline_layout.setContentsMargins(0, 0, 0, 0)
+        self.glucose_inline_layout.setSpacing(8)
+        self.glucose_inline_stretch = self.glucose_inline_layout.addStretch(1)
+        scroll.setWidget(self.glucose_inline_content)
+        layout.addWidget(scroll, 1)
+        self.glucose_inline_panel = panel
+        self.glucose_inline_panel.hide()
+        return panel
 
     def _build_search_row(self):
         row = QHBoxLayout()
@@ -432,7 +562,6 @@ class LabApp(QMainWindow):
             self.all_records.append(record)
             self._check_record_alert(*record)
         self.filter_data()
-        QApplication.beep()
 
     def filter_data(self, *args):
         patient_query = self.patient_search.text().strip().lower()
@@ -440,7 +569,7 @@ class LabApp(QMainWindow):
         grouped = {}
         visible_result_count = 0
 
-        for patient_name, test_name, result in self.all_records:
+        for patient_id, patient_name, test_name, result in self.all_records:
             if patient_query not in patient_name.lower() or test_query not in test_name.lower():
                 continue
             grouped.setdefault(patient_name, []).append((test_name, result))
@@ -499,7 +628,7 @@ class LabApp(QMainWindow):
         patient_name = patient_item.data(0, Qt.ItemDataRole.UserRole)
         if not patient_name:
             return
-        self.all_records = [record for record in self.all_records if record[0] != patient_name]
+        self.all_records = [record for record in self.all_records if record[1] != patient_name]
         self.notified_records = {
             record for record in self.notified_records if record[0] != patient_name
         }
@@ -534,39 +663,241 @@ class LabApp(QMainWindow):
         lowered = result.strip().lower()
         return any(keyword in lowered for keyword in TECHNICAL_ERROR_KEYWORDS)
 
-    def _show_alert(self, patient_name, test_name, result, alert_reason):
-        if winsound:
-            winsound.PlaySound("SystemHand", winsound.SND_ALIAS | winsound.SND_ASYNC)
-        self.alert_label.setText(f"{patient_name}  ·  {test_name}  ·  {alert_reason}")
-        self.alert_label.setStyleSheet(f"color: {COLORS['offline']}; font-weight: 700;")
-        QTimer.singleShot(10000, lambda: self.alert_label.clear())
-
-    def _check_record_alert(self, patient_name, test_name, result):
-        alert_key = (patient_name, test_name, result)
-        if alert_key in self.alerted_records:
-            return
+    def _alert_reason(self, test_name, result):
+        normalized_result = result.strip().casefold() if result else ""
+        if (
+            not normalized_result
+            or normalized_result == "missing_result"
+            or "no result" in normalized_result
+            or "no-result" in normalized_result
+        ):
+            return "MISSING_RESULT"
 
         if self._is_technical_error(result):
-            self._show_alert(patient_name, test_name, result, "TECHNICAL ERROR")
-            self.alerted_records.add(alert_key)
-            return
+            return "TECHNICAL ERROR"
 
         numeric = self._extract_numeric_result(result)
         if numeric is None:
-            return
+            return None
 
-        range_def = CRITICAL_RANGES.get(test_name)
+        range_def = next(
+            (
+                definition
+                for configured_name, definition in CRITICAL_RANGES.items()
+                if configured_name.casefold() == test_name.casefold()
+            ),
+            None,
+        )
         if not range_def:
-            return
+            return None
 
         low = range_def.get("low")
         high = range_def.get("high")
         if low is not None and numeric < low:
-            self._show_alert(patient_name, test_name, result, f"LOW (< {low})")
-            self.alerted_records.add(alert_key)
-        elif high is not None and numeric > high:
-            self._show_alert(patient_name, test_name, result, f"HIGH (> {high})")
-            self.alerted_records.add(alert_key)
+            return f"LOW (< {low})"
+        if high is not None and numeric > high:
+            return f"HIGH (> {high})"
+        return None
+
+    def _check_record_alert(self, patient_id, patient_name, test_name, result):
+        reason = self._alert_reason(test_name, result)
+        if reason is None:
+            return
+
+        identity = json.dumps(
+            [patient_id, patient_name, test_name, result, reason],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        alert_key = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+        if alert_key in self.alerted_records:
+            return
+
+        created_at = datetime.now().astimezone().isoformat(timespec="seconds")
+        try:
+            self.alert_store.create_alert(
+                alert_key,
+                patient_id,
+                patient_name,
+                test_name,
+                result,
+                reason,
+                created_at,
+            )
+        except Exception as error:
+            QMessageBox.critical(
+                self,
+                "Alert could not be saved",
+                f"The alert was not persisted and will not be shown as active.\n\n{error}",
+            )
+            return
+
+        self.alerted_records.add(alert_key)
+        self._refresh_active_alerts()
+
+    def _refresh_active_alerts(self):
+        self.active_alerts = self.alert_store.unacknowledged_alerts()
+        while self.alert_panel_body_layout.count():
+            item = self.alert_panel_body_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        if not self.active_alerts:
+            self.alert_card.hide()
+            self.alert_sound_timer.stop()
+            if winsound:
+                winsound.PlaySound(None, winsound.SND_PURGE)
+            return
+
+        self.alert_heading.setText("CRITICAL ALERTS")
+        self.alert_queue_label.setText(f"{len(self.active_alerts)} active")
+        for alert in self.active_alerts:
+            self.alert_panel_body_layout.addWidget(self._build_critical_alert_row(alert))
+
+        self.alert_panel_body_layout.addStretch(1)
+        self.alert_card.adjustSize()
+        self._position_critical_alert_panel()
+        self.alert_card.show()
+        self.alert_card.raise_()
+        if not self.alert_sound_timer.isActive():
+            self._play_alert_sound()
+            self.alert_sound_timer.start()
+
+    def _build_critical_alert_row(self, alert):
+        card = QFrame()
+        card.setStyleSheet(
+            f"QFrame {{ background: {COLORS['surface_alt']}; "
+            f"border: 1px solid {COLORS['border']}; border-radius: 8px; }}"
+        )
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(9, 7, 9, 7)
+        layout.setSpacing(4)
+
+        patient = QLabel(
+            f"UHID {alert['patient_id']}  ·  {alert['patient_name']}"
+        )
+        patient.setTextFormat(Qt.TextFormat.PlainText)
+        patient.setWordWrap(True)
+        patient.setStyleSheet(
+            "color: #FFFFFF; font-size: 9pt; font-weight: 700; border: none;"
+        )
+        test = QLabel(f"{alert['test_name']}  ·  {alert['reason']}")
+        test.setTextFormat(Qt.TextFormat.PlainText)
+        test.setWordWrap(True)
+        test.setStyleSheet(
+            f"color: {COLORS['muted']}; font-size: 8pt; border: none;"
+        )
+        value = QLabel(alert["flagged_value"])
+        value.setTextFormat(Qt.TextFormat.PlainText)
+        value.setWordWrap(True)
+        value.setStyleSheet(
+            "color: #FFFFFF; background: #8F2029; border: 1px solid #FF6975;"
+            " border-radius: 5px; padding: 5px 8px; font-size: 12pt; font-weight: 900;"
+        )
+        timestamp = QLabel(alert["created_at"])
+        timestamp.setStyleSheet(
+            f"color: {COLORS['muted']}; font-size: 7pt; border: none;"
+        )
+        layout.addWidget(patient)
+        layout.addWidget(test)
+        layout.addWidget(value)
+
+        footer = QHBoxLayout()
+        footer.addWidget(timestamp, 1)
+        acknowledge = QPushButton("Acknowledge")
+        acknowledge.setMinimumHeight(28)
+        acknowledge.setStyleSheet(
+            "QPushButton { color: #FFFFFF; background: #7A252B; "
+            "border: 1px solid #FF6975; border-radius: 6px; padding: 5px 9px; "
+            "font-size: 8pt; font-weight: 700; }"
+            "QPushButton:hover { background: #9C3038; }"
+        )
+        acknowledge.clicked.connect(
+            lambda checked=False, key=alert["alert_key"]: self._acknowledge_alert(key)
+        )
+        footer.addWidget(acknowledge)
+        layout.addLayout(footer)
+        return card
+
+    def _position_critical_alert_panel(self):
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            return
+        bounds = screen.availableGeometry()
+        self.alert_card.adjustSize()
+        self.alert_card.move(
+            bounds.right() - self.alert_card.width() - 18,
+            bounds.top() + 72,
+        )
+
+    def _play_alert_sound(self):
+        if winsound:
+            winsound.PlaySound(
+                str(self.emergency_alert_sound),
+                winsound.SND_FILENAME | winsound.SND_ASYNC,
+            )
+        else:
+            QApplication.beep()
+
+    @staticmethod
+    def _build_emergency_alert_sound():
+        sample_rate = 12000
+        segments = ((760, 1160), (1160, 760), (760, 1160), (1160, 760))
+        samples = []
+        samples_per_segment = int(sample_rate * 0.28)
+        for start_frequency, end_frequency in segments:
+            for index in range(samples_per_segment):
+                progress = index / samples_per_segment
+                frequency = start_frequency + (end_frequency - start_frequency) * progress
+                envelope = min(1.0, index / 180, (samples_per_segment - index) / 180)
+                tone = math.sin(2 * math.pi * frequency * index / sample_rate)
+                samples.append(int(26000 * envelope * tone))
+
+        audio = io.BytesIO()
+        with wave.open(audio, "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(sample_rate)
+            wav_file.writeframes(
+                b"".join(struct.pack("<h", sample) for sample in samples)
+            )
+        return audio.getvalue()
+
+    def _trigger_demo_alert(self):
+        demo_id = datetime.now().astimezone().strftime("DEMO-%Y%m%d-%H%M%S-%f")
+        self._check_record_alert(
+            demo_id,
+            "DEMO PATIENT (TEST ONLY)",
+            "SODIUM (Na+)",
+            "110 mmol/L (DEMO)",
+        )
+
+    def _trigger_demo_missing_alert(self):
+        demo_id = datetime.now().astimezone().strftime("DEMO-MISSING-%Y%m%d-%H%M%S-%f")
+        self._check_record_alert(
+            demo_id,
+            "DEMO PATIENT (TEST ONLY)",
+            "GLUCOSE",
+            "MISSING_RESULT",
+        )
+
+    def _acknowledge_current_alert(self):
+        if not self.active_alerts:
+            return
+        self._acknowledge_alert(self.active_alerts[0]["alert_key"])
+
+    def _acknowledge_alert(self, alert_key):
+        acknowledged_at = datetime.now().astimezone().isoformat(timespec="seconds")
+        try:
+            self.alert_store.acknowledge(alert_key, acknowledged_at)
+            self._refresh_active_alerts()
+        except Exception as error:
+            QMessageBox.critical(
+                self,
+                "Acknowledgment failed",
+                f"The alert remains active because acknowledgment was not saved.\n\n{error}",
+            )
 
     def _show_glucose_notification(self, patient_name, test_name, result):
         if self.notification_window is None:
@@ -584,6 +915,7 @@ class LabApp(QMainWindow):
             dialog.setMaximumWidth(760)
             dialog.setStyleSheet(self._application_stylesheet())
             self.notification_window = dialog
+            dialog.drag_position_changed.connect(self._save_glucose_notification_position)
             self.notification_collapsed = False
             self.notification_maximized = False
             dialog_layout = QVBoxLayout(dialog)
@@ -663,6 +995,9 @@ class LabApp(QMainWindow):
         notification_id = self.notification_counter
         self.notification_counter += 1
         self.notification_heading.setText(f"GLUCOSE ALERTS  ·  {len(self.notification_rows) + 1}")
+        self._add_glucose_inline_notification(
+            notification_id, patient_name, test_name, result
+        )
 
         alert_card = QFrame()
         alert_card.setObjectName("notificationCard")
@@ -731,6 +1066,51 @@ class LabApp(QMainWindow):
         if not self.notification_window.isMaximized():
             self.notification_window.raise_()
 
+    def _add_glucose_inline_notification(
+        self, notification_id, patient_name, test_name, result
+    ):
+        card = QFrame()
+        card.setStyleSheet(
+            f"QFrame {{ background: {COLORS['surface_alt']}; "
+            f"border: 1px solid {COLORS['border']}; border-radius: 7px; }}"
+        )
+        row = QHBoxLayout(card)
+        row.setContentsMargins(8, 3, 8, 3)
+        row.setSpacing(7)
+
+        patient = QLabel(patient_name)
+        patient.setTextFormat(Qt.TextFormat.PlainText)
+        patient.setMaximumWidth(150)
+        patient.setToolTip(patient_name)
+        patient.setStyleSheet(
+            "color: #FFFFFF; font-size: 8pt; font-weight: 700; border: none;"
+        )
+        test = QLabel(test_name.upper())
+        test.setStyleSheet(
+            f"color: {COLORS['muted']}; font-size: 7pt; font-weight: 700; border: none;"
+        )
+        value = QLabel(result)
+        value.setTextFormat(Qt.TextFormat.PlainText)
+        value.setToolTip(result)
+        if self._alert_reason(test_name, result):
+            value.setStyleSheet(
+                "color: #FFFFFF; background: #8F2029; border-radius: 4px;"
+                " padding: 3px 6px; font-size: 9pt; font-weight: 900;"
+            )
+        else:
+            value.setStyleSheet(
+                "color: #FFD27F; font-size: 9pt; font-weight: 800; border: none;"
+            )
+        row.addWidget(patient)
+        row.addWidget(test)
+        row.addWidget(value)
+
+        self.glucose_inline_layout.insertWidget(
+            self.glucose_inline_layout.count() - 1, card
+        )
+        self.inline_notification_rows[notification_id] = card
+        self.glucose_inline_panel.show()
+
     def _toggle_glucose_notifications(self):
         self._minimize_glucose_notifications()
 
@@ -753,8 +1133,47 @@ class LabApp(QMainWindow):
             return
         bounds = screen.availableGeometry()
         window = self.notification_window
+        if self.notification_collapsed:
+            if self.notification_position is None:
+                x_position = bounds.right() - window.width() - 18
+                y_position = bounds.top() + max(
+                    70, (bounds.height() - window.height()) // 2
+                )
+            else:
+                x_position = min(
+                    max(self.notification_position.x(), bounds.left()),
+                    bounds.right() - window.width() + 1,
+                )
+                y_position = min(
+                    max(self.notification_position.y(), bounds.top()),
+                    bounds.bottom() - window.height() + 1,
+                )
+            window.move(x_position, y_position)
+            self.notification_position = window.frameGeometry().topLeft()
+            return
+
         y_position = bounds.top() + max(70, (bounds.height() - window.height()) // 2)
         window.move(bounds.left() + 18, y_position)
+
+    def _save_glucose_notification_position(self, position):
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            self.notification_position = position
+            return
+
+        bounds = screen.availableGeometry()
+        window = self.notification_window
+        width = window.width() if window is not None else 54
+        height = window.height() if window is not None else 54
+        x_position = min(
+            max(position.x(), bounds.left()), bounds.right() - width + 1
+        )
+        y_position = min(
+            max(position.y(), bounds.top()), bounds.bottom() - height + 1
+        )
+        self.notification_position = QPoint(x_position, y_position)
+        if window is not None:
+            window.move(self.notification_position)
 
     def _minimize_glucose_notifications(self):
         if self.notification_window is None:
@@ -800,6 +1219,11 @@ class LabApp(QMainWindow):
             self.notification_body_layout.removeWidget(alert_card)
             alert_card.deleteLater()
         self.notification_rows.clear()
+        for inline_card in self.inline_notification_rows.values():
+            self.glucose_inline_layout.removeWidget(inline_card)
+            inline_card.deleteLater()
+        self.inline_notification_rows.clear()
+        self.glucose_inline_panel.hide()
         self.notification_window.hide()
         self.notification_window.deleteLater()
         self.notification_window = None
@@ -812,11 +1236,16 @@ class LabApp(QMainWindow):
             return
         self.notification_body_layout.removeWidget(alert_card)
         alert_card.deleteLater()
+        inline_card = self.inline_notification_rows.pop(notification_id, None)
+        if inline_card is not None:
+            self.glucose_inline_layout.removeWidget(inline_card)
+            inline_card.deleteLater()
         self.notification_heading.setText(f"GLUCOSE ALERTS  ·  {len(self.notification_rows)}")
         self.notification_bubble.setText(
             str(len(self.notification_rows)) if len(self.notification_rows) < 100 else "99+"
         )
         if not self.notification_rows and self.notification_window is not None:
+            self.glucose_inline_panel.hide()
             self.notification_window.hide()
             self.notification_window.deleteLater()
             self.notification_window = None

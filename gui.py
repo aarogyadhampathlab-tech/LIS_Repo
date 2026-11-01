@@ -349,7 +349,7 @@ class LabApp:
         t_query = self.search_test.get().lower()
         
         grouped = {}
-        for name, test, res in self.all_records:
+        for patient_id, name, test, res in self.all_records:
             if p_query in name.lower() and t_query in test.lower():
                 if name not in grouped: grouped[name] = []
                 grouped[name].append((test, res))
@@ -412,19 +412,30 @@ class LabApp:
         self.alert_text.config(text=text, fg=COLORS["offline"])
         self.root.after(10000, lambda: self.alert_text.config(text=""))
 
-    def _show_alert(self, patient_name, test_name, result, alert_reason):
+    def _show_alert(self, patient_id, patient_name, test_name, result, alert_reason):
         full_title = f"{alert_reason}: {test_name}"
         # Play alert sound and update status, but do NOT show in left notifications
         winsound.PlaySound("SystemHand", winsound.SND_ALIAS | winsound.SND_ASYNC)
-        self._update_alert_status(f"{patient_name} | {test_name} → {alert_reason}")
+        self._update_alert_status(
+            f"{patient_id} | {patient_name} | {test_name} → {alert_reason}"
+        )
 
-    def _check_record_alert(self, patient_name, test_name, result):
-        alert_key = (patient_name, test_name, result)
+    def _check_record_alert(self, patient_id, patient_name, test_name, result):
+        alert_key = (patient_id, patient_name, test_name, result)
         if alert_key in self.alerted_records:
             return
 
+        if result.strip().casefold() == "missing_result":
+            self._show_alert(
+                patient_id, patient_name, test_name, result, "MISSING_RESULT"
+            )
+            self.alerted_records.add(alert_key)
+            return
+
         if self._is_technical_error(result):
-            self._show_alert(patient_name, test_name, result, "TECHNICAL ERROR")
+            self._show_alert(
+                patient_id, patient_name, test_name, result, "TECHNICAL ERROR"
+            )
             self.alerted_records.add(alert_key)
             return
 
@@ -440,12 +451,16 @@ class LabApp:
         high = range_def.get("high")
 
         if low is not None and numeric < low:
-            self._show_alert(patient_name, test_name, result, f"LOW (< {low})")
+            self._show_alert(
+                patient_id, patient_name, test_name, result, f"LOW (< {low})"
+            )
             self.alerted_records.add(alert_key)
             return
 
         if high is not None and numeric > high:
-            self._show_alert(patient_name, test_name, result, f"HIGH (> {high})")
+            self._show_alert(
+                patient_id, patient_name, test_name, result, f"HIGH (> {high})"
+            )
             self.alerted_records.add(alert_key)
             return
 
@@ -465,7 +480,7 @@ class LabApp:
         item_text = self.tree.item(selected[0])['text']
         raw_name = item_text.split("] ", 1)[-1].strip()
         # Remove from both records and notification tracking
-        self.all_records = [r for r in self.all_records if r[0] != raw_name]
+        self.all_records = [r for r in self.all_records if r[1] != raw_name]
         self.notified_records = {record for record in self.notified_records if record[0] != raw_name}
         self.filter_data()
 

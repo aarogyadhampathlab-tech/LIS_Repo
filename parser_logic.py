@@ -5,23 +5,23 @@ from config import TEST_MAP
 HIDDEN_IDS = ["950", "951", "952"]
 
 def parse_log_line(line):
-    """Parses a single line and filters out hidden IDs."""
+    """Parse a result line, retaining explicit missing-result records."""
     parts = [p.strip() for p in line.split('\t')]
     
-    if len(parts) >= 6:
+    if len(parts) >= 5:
         name = parts[1]
         tid = parts[4]  # This is the Test ID
-        res = parts[5]
+        res = parts[5] if len(parts) >= 6 else ""
         
-        # --- NEW FILTER LOGIC ---
-        # 1. Skip if the ID is in our hidden list
         if tid in HIDDEN_IDS:
             return None
             
-        # 2. Regular validation
-        if any(c.isalpha() for c in name) and "No Result" not in res:
+        if any(c.isalpha() for c in name):
             test_display_name = TEST_MAP.get(tid, f"ID: {tid}")
-            return (name, test_display_name, res)
+            patient_id = parts[2] or "UNKNOWN"
+            if not res or "no result" in res.casefold() or "no-result" in res.casefold():
+                res = "MISSING_RESULT"
+            return (patient_id, name, test_display_name, res)
             
     return None
 
