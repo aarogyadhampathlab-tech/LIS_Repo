@@ -3,22 +3,36 @@ from pathlib import Path
 
 from alert_rules import load_alert_rules
 
+
+def load_test_map():
+    configuration_path = Path(__file__).parent / "test_map.json"
+    with configuration_path.open("r", encoding="utf-8") as mapping_file:
+        categorized_map = json.load(mapping_file)
+
+    test_map = {}
+    for category, mappings in categorized_map.items():
+        if not isinstance(mappings, dict):
+            raise ValueError(
+                f"Test map category '{category}' must contain a PID-to-name object"
+            )
+        for test_id, test_name in mappings.items():
+            if not isinstance(test_name, str):
+                raise ValueError(
+                    f"Test name for PID '{test_id}' in '{category}' must be a string"
+                )
+            if test_id in test_map:
+                raise ValueError(f"Duplicate PID '{test_id}' in test_map.json")
+            test_map[test_id] = test_name
+    return test_map
+
+
 # --- 1. NETWORK & PATH SETTINGS ---
 NETWORK_SOURCE = r'\\192.168.1.103\log1' 
 WATCH_FOLDER = r'C:\Users\user\Desktop\automate\LogFiles'
 REPORT_PATH = r'C:\Users\user\Desktop\Patient_Report.csv'
 
-# --- 2. TEST MAPPING (Add new IDs here) ---
-TEST_MAP = {
-    "319": "TOTAL BILIRUBIN", "905": "CONJUGATED (Direct)", "798": "UNCONJUGATED (Indirect)",
-    "320": "AST / SGOT", "357": "ALT / SGPT", "321": "ALKALINE PHOSPHATASE",
-    "326": "GGT", "301": "TOTAL PROTEIN", "303": "ALBUMIN",
-    "315": "UREA", "314": "SERUM CREATININE",
-    "302": "URIC ACID", "309": "SODIUM (Na+)", "308": "POTASSIUM (K+)",
-     
-    "539": "HbA1c", "925": "DERIVED HbA1c", "450": "LDH", "300": "glucose",
-    "927": "a1c","306":"amylase", "325": "lipase", "910": "GLOBULIN"
-}
+# --- 2. TEST MAPPING (edit test_map.json) ---
+TEST_MAP = load_test_map()
 
 # --- 3. DEMO ALERT RANGES (edit threshold_editor/thresholds.json) ---
 ALERT_RULES = load_alert_rules()

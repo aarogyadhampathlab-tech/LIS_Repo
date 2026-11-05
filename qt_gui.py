@@ -572,18 +572,23 @@ class LabApp(QMainWindow):
         for patient_id, patient_name, test_name, result in self.all_records:
             if patient_query not in patient_name.lower() or test_query not in test_name.lower():
                 continue
-            grouped.setdefault(patient_name, []).append((test_name, result))
+            grouped.setdefault((patient_id, patient_name), []).append((test_name, result))
             visible_result_count += 1
 
         self.tree.clear()
         standard_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
-        for patient_name, tests in grouped.items():
-            patient_item = QTreeWidgetItem([patient_name, "", ""])
-            patient_item.setData(0, Qt.ItemDataRole.UserRole, patient_name)
+        for (patient_id, patient_name), tests in grouped.items():
+            patient_label = patient_name
+            if patient_id and patient_id != "UNKNOWN":
+                patient_label = f"{patient_name}  ·  UHID {patient_id}"
+            patient_item = QTreeWidgetItem([patient_label, "", ""])
+            patient_item.setData(
+                0, Qt.ItemDataRole.UserRole, (patient_id, patient_name)
+            )
             patient_item.setIcon(0, standard_icon)
             patient_item.setForeground(0, QColor(COLORS["text"]))
-            patient_item.setExpanded(False)
             self.tree.addTopLevelItem(patient_item)
+            patient_item.setExpanded(True)
 
             for test_name, result in tests:
                 test_item = QTreeWidgetItem(["", test_name, result])
@@ -594,7 +599,7 @@ class LabApp(QMainWindow):
             f"{len(grouped)} PATIENTS  ·  {visible_result_count} RESULTS"
         )
 
-        for patient_name, tests in grouped.items():
+        for (patient_id, patient_name), tests in grouped.items():
             glucose_result = None
             glucose_test = None
             for test_name, result in tests:
@@ -625,10 +630,15 @@ class LabApp(QMainWindow):
         if item is None:
             return
         patient_item = item if item.parent() is None else item.parent()
-        patient_name = patient_item.data(0, Qt.ItemDataRole.UserRole)
-        if not patient_name:
+        patient_identity = patient_item.data(0, Qt.ItemDataRole.UserRole)
+        if not patient_identity:
             return
-        self.all_records = [record for record in self.all_records if record[1] != patient_name]
+        patient_id, patient_name = patient_identity
+        self.all_records = [
+            record
+            for record in self.all_records
+            if (record[0], record[1]) != (patient_id, patient_name)
+        ]
         self.notified_records = {
             record for record in self.notified_records if record[0] != patient_name
         }

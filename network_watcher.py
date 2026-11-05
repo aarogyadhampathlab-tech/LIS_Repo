@@ -4,104 +4,98 @@ import shutil
 import datetime
 import subprocess
 import threading
+from collections import Counter
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from config import NETWORK_SOURCE, WATCH_FOLDER
 from parser_logic import process_file
 
 class MedicalHandler(FileSystemEventHandler):
-    """Listens for new files and tells the GUI to update."""
+    """Processes completed LIS result logs and forwards only unseen rows."""
     def __init__(self, ui_callback):
         self.ui_callback = ui_callback
-        self.last_processed = {}  # Track file sizes to detect real modifications
+        self.last_processed = {}
+        self.file_records = {}
+        self.processing_lock = threading.Lock()
+
+    @staticmethod
+    def _is_current_result_log(file_path):
+        file_name = os.path.basename(file_path).lower()
+        today_prefix = datetime.datetime.now().strftime("%m%d%Y").lower()
+        return file_name.startswith(today_prefix) and file_name.endswith("r.log")
 
     def on_created(self, event):
-        if event.is_directory:
+        if event.is_directory or not self._is_current_result_log(event.src_path):
             return
-        
-        # Wait for file to be completely written (check file size stability)
-        file_path = event.src_path
-        file_name = os.path.basename(file_path)
-        ts = datetime.datetime.now().strftime("%H:%M:%S")
-        print(f"[{ts}] FILE DETECTED: {file_name} - Waiting for write to complete...")
-        
-        prev_size = 0
-        stable_count = 0
-        
-        while stable_count < 2:  # File must have same size for 2 checks
-            try:
-                if os.path.exists(file_path):
-                    curr_size = os.path.getsize(file_path)
-                    if curr_size == prev_size and curr_size > 0:
-                        stable_count += 1
-                    else:
-                        stable_count = 0
-                    prev_size = curr_size
-            except:
-                pass
-            time.sleep(0.2)  # Check every 200ms instead of sleeping blindly
-        
-        ts = datetime.datetime.now().strftime("%H:%M:%S")
-        print(f"[{ts}] FILE READY: {file_name} - Processing ({prev_size} bytes)...")
-        
-        # Parse the new file using our parser logic
-        new_data = process_file(file_path)
-        
-        # If we found valid test results, send them to the GUI
-        if new_data:
-            ts = datetime.datetime.now().strftime("%H:%M:%S")
-            print(f"[{ts}] ✅ DATA SENT TO GUI: {len(new_data)} test results from {file_name}")
-            self.last_processed[file_path] = prev_size
-            self.ui_callback(new_data)
-    
+        self._process_when_stable(event.src_path)
+
     def on_modified(self, event):
-        """Handle file modifications (when new data is added)."""
-        if event.is_directory:
+        if event.is_directory or not self._is_current_result_log(event.src_path):
             return
-        
-        file_path = event.src_path
-        file_name = os.path.basename(file_path)
-        
+
+        self._process_when_stable(event.src_path)
+
+    def process_existing_files(self, folder_path):
+        """Load result logs already present when the watcher starts."""
         try:
-            curr_size = os.path.getsize(file_path)
-            last_size = self.last_processed.get(file_path, 0)
-            
-            # Only process if file grew (new data added)
-            if curr_size > last_size:
-                ts = datetime.datetime.now().strftime("%H:%M:%S")
-                print(f"[{ts}] FILE MODIFIED: {file_name} - Size increased ({last_size} → {curr_size} bytes)")
-                
-                # Wait for write to stabilize
-                time.sleep(0.5)
-                prev_size = curr_size
-                stable_count = 0
-                
-                while stable_count < 2:
-                    try:
-                        if os.path.exists(file_path):
-                            new_size = os.path.getsize(file_path)
-                            if new_size == prev_size:
-                                stable_count += 1
-                            else:
-                                stable_count = 0
-                            prev_size = new_size
-                    except:
-                        pass
-                    time.sleep(0.2)
-                
-                ts = datetime.datetime.now().strftime("%H:%M:%S")
-                print(f"[{ts}] FILE READY (MODIFIED): {file_name} - Reprocessing ({prev_size} bytes)...")
-                
-                # Reprocess the updated file
-                new_data = process_file(file_path)
-                
-                if new_data:
-                    ts = datetime.datetime.now().strftime("%H:%M:%S")
-                    print(f"[{ts}] ✅ UPDATED DATA SENT TO GUI: {len(new_data)} test results from {file_name}")
-                    self.last_processed[file_path] = prev_size
-                    self.ui_callback(new_data)
+            for file_name in sorted(os.listdir(folder_path)):
+                file_path = os.path.join(folder_path, file_name)
+                if os.path.isfile(file_path) and self._is_current_result_log(file_path):
+                    self._process_file(file_path)
+        except OSError as error:
+            print(f"Error scanning result logs in {folder_path}: {error}")
+
+    def _process_when_stable(self, file_path):
+        deadline = time.monotonic() + 15
+        previous_signature = None
+        stable_count = 0
+        try:
+            while time.monotonic() < deadline:
+                try:
+                    stat = os.stat(file_path)
+                except FileNotFoundError:
+                    return
+
+                signature = (stat.st_size, stat.st_mtime_ns)
+                if stat.st_size > 0 and signature == previous_signature:
+                    stable_count += 1
+                    if stable_count >= 2:
+                        self._process_file(file_path)
+                        return
+                else:
+                    stable_count = 0
+                previous_signature = signature
+                time.sleep(0.2)
+
+            print(f"Result log did not stabilize within 15 seconds: {file_path}")
         except Exception as e:
-            print(f"Error in on_modified for {file_name}: {e}")
+            print(f"Error waiting for result log {file_path}: {e}")
+
+    def _process_file(self, file_path):
+        try:
+            stat = os.stat(file_path)
+            signature = (stat.st_size, stat.st_mtime_ns)
+            with self.processing_lock:
+                if self.last_processed.get(file_path) == signature:
+                    return
+
+                records = process_file(file_path)
+                previous_records = self.file_records.get(file_path, Counter())
+                current_records = Counter(records)
+                new_records = list((current_records - previous_records).elements())
+                self.file_records[file_path] = current_records
+                self.last_processed[file_path] = signature
+
+            file_name = os.path.basename(file_path)
+            if new_records:
+                timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+                print(
+                    f"[{timestamp}] DATA SENT TO GUI: {len(new_records)} results "
+                    f"from {file_name}"
+                )
+                self.ui_callback(new_records)
+        except Exception as error:
+            print(f"Error processing result log {file_path}: {error}")
 
 def start_sync_task(status_callback):
     """Check network connection and copy new logs every 10 seconds."""
@@ -163,4 +157,9 @@ def start_observer(ui_callback):
     handler = MedicalHandler(ui_callback)
     observer.schedule(handler, WATCH_FOLDER, recursive=False)
     observer.start()
+    threading.Thread(
+        target=handler.process_existing_files,
+        args=(WATCH_FOLDER,),
+        daemon=True,
+    ).start()
     return observer

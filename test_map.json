@@ -1,0 +1,60 @@
+{
+    "Hematology": {
+        "390": "HAEMOGLOBIN (HB)",
+        "773": "TOTAL LEUCOCYTE COUNT (TLC)",
+        "559": "NEUTROPHIL",
+        "516": "LYMPHOCYTE",
+        "293": "EOSINOPHIL",
+        "544": "MONOCYTE",
+        "108": "BASOPHIL",
+        "276": "DLC TOTAL",
+        "643": "R B C (Red Blood Cells)",
+        "597": "PLATELET COUNT",
+        "573": "P.C.V / HAEMATOCRIT",
+        "520": "M C V",
+        "518": "M C H",
+        "519": "M C H C",
+        "644": "R D W (CV)",
+        "869": "MPV",
+        "450": "LDH"
+    },
+    "Coagulation": {
+        "629": "PT PATIENT",
+        "628": "PT CONTROL",
+        "468": "INDEX",
+        "482": "ISI value of reagent",
+        "474": "INR (International Normalized Ratio)"
+    },
+    "Liver Function": {
+        "798": "UNCONJUGATED (I.D.Bilirubin)",
+        "768": "TOTAL BILIRUBIN",
+        "220": "CONJUGATED (D. Bilirubin)",
+        "101": "AST / SGOT",
+        "49": "ALT/SGPT",
+        "45": "ALKALINE PHOSPHATASE",
+        "366": "GGT",
+        "774": "TOTAL PROTEIN",
+        "672": "ALBUMIN",
+        "368": "GLOBULIN",
+        "21": "A/G RATIO"
+    },
+    "Renal Function and Electrolytes": {
+        "137": "UREA",
+        "138": "BLOOD UREA NITROGEN (BUN)",
+        "680": "SERUM CREATININE",
+        "688": "URIC ACID",
+        "701": "SODIUM",
+        "609": "POTASSIUM",
+        "163": "CALCIUM",
+        "473": "INORGANIC PHOSPHORUS"
+    },
+    "Glucose and Other Tests": {
+        "131": "BLOOD GLUCOSE - RANDOM",
+        "300": "glucose",
+        "539": "HbA1c",
+        "925": "DERIVED HbA1c",
+        "927": "a1c",
+        "306": "amylase",
+        "325": "lipase"
+    }
+}

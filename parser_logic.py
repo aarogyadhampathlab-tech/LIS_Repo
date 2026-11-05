@@ -1,4 +1,3 @@
-import time
 from config import TEST_MAP
 
 # Define IDs you want to ignore
