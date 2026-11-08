@@ -1,9 +1,27 @@
 import json
 import math
+import re
 from pathlib import Path
 
 
 ALERT_RULES_PATH = Path(__file__).with_name("threshold_editor") / "thresholds.json"
+CRITICAL_TEST_ALIASES = {
+    "sodium": "sodiumna",
+    "potassium": "potassiumk",
+    "bloodglucoserandom": "glucose",
+}
+
+
+def find_critical_range(test_name, critical_ranges):
+    normalized_name = re.sub(r"[^a-z0-9]", "", test_name.casefold())
+    normalized_name = CRITICAL_TEST_ALIASES.get(normalized_name, normalized_name)
+    for configured_name, definition in critical_ranges.items():
+        normalized_configured_name = re.sub(
+            r"[^a-z0-9]", "", configured_name.casefold()
+        )
+        if normalized_name == normalized_configured_name:
+            return definition
+    return None
 
 
 def load_alert_rules(path=ALERT_RULES_PATH):

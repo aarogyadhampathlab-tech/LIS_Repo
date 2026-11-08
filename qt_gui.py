@@ -14,6 +14,7 @@ from PySide6.QtCore import QEvent, QPoint, QStandardPaths, Qt, QTimer, Signal, S
 from PySide6.QtGui import QColor, QIcon, QMouseEvent, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QDialog,
     QFrame,
     QGraphicsDropShadowEffect,
@@ -42,6 +43,7 @@ except ImportError:
 from config import CRITICAL_RANGES, REPORT_PATH, TECHNICAL_ERROR_KEYWORDS
 
 from alert_store import AlertStore
+from alert_rules import find_critical_range
 
 
 COLORS = {
@@ -248,7 +250,15 @@ class LabApp(QMainWindow):
                 padding: 10px 12px;
                 selection-background-color: {COLORS['accent_dark']};
             }}
+            QComboBox {{
+                background: {COLORS['surface_alt']};
+                color: {COLORS['text']};
+                border: 1px solid {COLORS['border']};
+                border-radius: 8px;
+                padding: 8px 10px;
+            }}
             QLineEdit:focus {{ border: 1px solid {COLORS['accent']}; }}
+            QComboBox:focus {{ border: 1px solid {COLORS['accent']}; }}
             QTreeWidget {{
                 background: {COLORS['surface']};
                 alternate-background-color: #1A282C;
@@ -472,10 +482,18 @@ class LabApp(QMainWindow):
     def _build_search_row(self):
         row = QHBoxLayout()
         row.setSpacing(10)
+
+        self.patient_filter = QComboBox()
+        self.patient_filter.addItem("All", "all")
+        self.patient_filter.addItem("UHID", "uhid")
+        self.patient_filter.addItem("Name", "name")
+        self.patient_filter.setToolTip("Choose which patient field to search")
+        self.patient_filter.currentIndexChanged.connect(self.filter_data)
+
         self.patient_search = QLineEdit()
-        self.patient_search.setPlaceholderText("⌕   Search patients")
+        self.patient_search.setPlaceholderText("⌕   Search UHID or name")
         self.patient_search.setClearButtonEnabled(True)
-        self.patient_search.setToolTip("Filter results by patient name")
+        self.patient_search.setToolTip("Filter results by the selected patient field")
         self.patient_search.textChanged.connect(self.filter_data)
 
         self.test_search = QLineEdit()
@@ -484,6 +502,7 @@ class LabApp(QMainWindow):
         self.test_search.setToolTip("Filter results by test name")
         self.test_search.textChanged.connect(self.filter_data)
 
+        row.addWidget(self.patient_filter)
         row.addWidget(self.patient_search, 1)
         row.addWidget(self.test_search, 1)
         self.result_count = QLabel("0 PATIENTS  ·  0 RESULTS")
@@ -565,18 +584,29 @@ class LabApp(QMainWindow):
 
     def filter_data(self, *args):
         patient_query = self.patient_search.text().strip().lower()
+        patient_filter = self.patient_filter.currentData()
         test_query = self.test_search.text().strip().lower()
         grouped = {}
         visible_result_count = 0
 
         for patient_id, patient_name, test_name, result in self.all_records:
-            if patient_query not in patient_name.lower() or test_query not in test_name.lower():
+            patient_id_text = patient_id.lower()
+            patient_name_text = patient_name.lower()
+            if patient_filter == "uhid":
+                patient_matches = patient_query in patient_id_text
+            elif patient_filter == "name":
+                patient_matches = patient_query in patient_name_text
+            else:
+                patient_matches = (
+                    patient_query in patient_id_text
+                    or patient_query in patient_name_text
+                )
+            if not patient_matches or test_query not in test_name.lower():
                 continue
             grouped.setdefault((patient_id, patient_name), []).append((test_name, result))
             visible_result_count += 1
 
         self.tree.clear()
-        standard_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
         for (patient_id, patient_name), tests in grouped.items():
             patient_label = patient_name
             if patient_id and patient_id != "UNKNOWN":
@@ -585,10 +615,12 @@ class LabApp(QMainWindow):
             patient_item.setData(
                 0, Qt.ItemDataRole.UserRole, (patient_id, patient_name)
             )
-            patient_item.setIcon(0, standard_icon)
+            patient_item.setIcon(
+                0, self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
+            )
             patient_item.setForeground(0, QColor(COLORS["text"]))
             self.tree.addTopLevelItem(patient_item)
-            patient_item.setExpanded(True)
+            patient_item.setExpanded(False)
 
             for test_name, result in tests:
                 test_item = QTreeWidgetItem(["", test_name, result])
@@ -690,14 +722,7 @@ class LabApp(QMainWindow):
         if numeric is None:
             return None
 
-        range_def = next(
-            (
-                definition
-                for configured_name, definition in CRITICAL_RANGES.items()
-                if configured_name.casefold() == test_name.casefold()
-            ),
-            None,
-        )
+        range_def = find_critical_range(test_name, CRITICAL_RANGES)
         if not range_def:
             return None
 
@@ -784,9 +809,15 @@ class LabApp(QMainWindow):
         layout.setContentsMargins(9, 7, 9, 7)
         layout.setSpacing(4)
 
-        patient = QLabel(
-            f"UHID {alert['patient_id']}  ·  {alert['patient_name']}"
-        )
+        patient_id = alert["patient_id"]
+        patient_name = alert["patient_name"]
+        if patient_id and patient_id != "UNKNOWN":
+            patient_label = f"UHID {patient_id}"
+            if patient_name and patient_name != "UNKNOWN":
+                patient_label += f"  ·  {patient_name}"
+        else:
+            patient_label = patient_name if patient_name != "UNKNOWN" else "UNKNOWN"
+        patient = QLabel(patient_label)
         patient.setTextFormat(Qt.TextFormat.PlainText)
         patient.setWordWrap(True)
         patient.setStyleSheet(

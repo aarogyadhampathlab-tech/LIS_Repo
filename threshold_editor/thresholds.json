@@ -2,7 +2,7 @@
     "_note": "DEMO ALERT TRIGGERS ONLY, not validated critical limits or reference ranges. Confirm thresholds, units and alert policy with the laboratory director before clinical use. Edit critical_ranges to add or change alert ranges.",
     "critical_ranges": {
         "SODIUM (NA+)": {
-            "low": 130,
+            "low": 127,
             "high": 155,
             "unit": "mmol/L"
         },
