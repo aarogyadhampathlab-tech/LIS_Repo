@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from alert_rules import load_alert_rules
+from core.alert_rules import load_alert_rules
 
 
 def load_test_map():
@@ -29,12 +29,14 @@ def load_test_map():
 # --- 1. NETWORK & PATH SETTINGS ---
 NETWORK_SOURCE = r'\\192.168.1.103\log1' 
 WATCH_FOLDER = r'C:\Users\user\Desktop\automate\LogFiles'
-REPORT_PATH = r'C:\Users\user\Desktop\Patient_Report.csv'
+PATIENT_LOG_CSV = (
+    r'C:\Users\user\Desktop\lims-barcode-extractor\server\live_patient_log.csv'
+)
 
-# --- 2. TEST MAPPING (edit test_map.json) ---
+# --- 2. TEST MAPPING (edit config/test_map.json) ---
 TEST_MAP = load_test_map()
 
-# --- 3. DEMO ALERT RANGES (edit threshold_editor/thresholds.json) ---
+# --- 3. DEMO ALERT RANGES (edit config/thresholds.json) ---
 ALERT_RULES = load_alert_rules()
 CRITICAL_RANGES = {
     test_name: {bound: value for bound, value in rule.items() if bound in ("low", "high")}
@@ -55,9 +57,7 @@ def save_critical_ranges(critical_ranges):
             rule.setdefault("unit", existing[test_name].get("unit", ""))
         updated[test_name] = rule
 
-    configuration_path = (
-        Path(__file__).parent / "threshold_editor" / "thresholds.json"
-    )
+    configuration_path = Path(__file__).with_name("thresholds.json")
     with configuration_path.open("w", encoding="utf-8") as rules_file:
         json.dump({
             "_note": (

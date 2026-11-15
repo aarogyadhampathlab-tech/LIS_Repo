@@ -35,15 +35,20 @@ def parse_log_line(line):
     parts = [p.strip() for p in line.split('\t')]
     
     if len(parts) >= 5:
-        name = parts[1]
+        if parts[1].isdigit() and not parts[2] and not parts[3]:
+            # Analyzer logs place the barcode in the second field.
+            patient_name = "UNKNOWN"
+            patient_id = parts[1]
+        else:
+            patient_name = parts[1] or "UNKNOWN"
+            patient_id = parts[2] or "UNKNOWN"
+
         tid = parts[4]  # This is the Test ID
         res = parts[5] if len(parts) >= 6 else ""
         
         if tid in HIDDEN_IDS:
             return None
 
-        patient_name = name or "UNKNOWN"
-        patient_id = parts[2] or "UNKNOWN"
         if patient_name == "UNKNOWN" and patient_id == "UNKNOWN":
             return None
 

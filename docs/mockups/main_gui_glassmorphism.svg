@@ -1,0 +1,232 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#eaf2ef"/>
+      <stop offset=".52" stop-color="#f4f8f6"/>
+      <stop offset="1" stop-color="#e8f1ee"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".78"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity=".56"/>
+    </linearGradient>
+    <linearGradient id="headerGlass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".15"/>
+      <stop offset="1" stop-color="#e2f0eb" stop-opacity=".055"/>
+    </linearGradient>
+    <linearGradient id="mint" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5aaf98"/>
+      <stop offset="1" stop-color="#368b79"/>
+    </linearGradient>
+    <radialGradient id="glowA">
+      <stop offset="0" stop-color="#72cbb3" stop-opacity=".2"/>
+      <stop offset="1" stop-color="#72cbb3" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB">
+      <stop offset="0" stop-color="#8dbfce" stop-opacity=".19"/>
+      <stop offset="1" stop-color="#8dbfce" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="blur" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="55"/>
+    </filter>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="14" stdDeviation="20" flood-color="#183832" flood-opacity=".28"/>
+    </filter>
+    <style>
+      text { font-family: "Segoe UI", Arial, sans-serif; }
+      .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; }
+      .body { font-size: 13px; }
+      .muted { fill: #71827e; }
+      .bright { fill: #203b36; }
+      .card { fill: url(#glass); stroke: #ffffff; stroke-opacity: .14; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1000" fill="url(#background)"/>
+  <ellipse cx="1360" cy="170" rx="340" ry="260" fill="url(#glowA)" filter="url(#blur)"/>
+  <ellipse cx="310" cy="850" rx="390" ry="300" fill="url(#glowB)" filter="url(#blur)"/>
+  <path d="M0 0h1600v100H0z" fill="#ffffff" opacity=".015"/>
+
+  <!-- Sidebar -->
+  <rect x="22" y="22" width="236" height="956" rx="24" fill="url(#glass)" stroke="#ffffff" stroke-opacity=".13" filter="url(#shadow)"/>
+  <rect x="43" y="44" width="46" height="46" rx="15" fill="url(#mint)"/>
+  <path d="M59 55h14v9l8 14H52l8-14v-9m-4 0h14m-17 19h23" fill="none" stroke="#16483e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="101" y="64" class="bright" font-size="16" font-weight="700">AAROGYA</text>
+  <text x="101" y="82" class="muted" font-size="10" letter-spacing="1.5">LAB MONITOR</text>
+  <line x1="44" y1="112" x2="236" y2="112" stroke="#23463f" stroke-opacity=".12"/>
+
+  <text x="48" y="151" class="eyebrow muted">WORKSPACE</text>
+  <rect x="38" y="169" width="204" height="46" rx="13" fill="#b9e5d8" fill-opacity=".16" stroke="#76c7b0" stroke-opacity=".26"/>
+  <rect x="51" y="181" width="21" height="21" rx="6" fill="#62b89f"/>
+  <path d="M56 187h11m-11 5h11m-11 5h7" stroke="#17483f" stroke-width="1.5" stroke-linecap="round"/>
+  <text x="84" y="197" fill="#23463f" font-size="13" font-weight="600">Live results</text>
+  <text x="48" y="257" class="muted body">Patients</text>
+  <circle cx="60" cy="253" r="10" fill="none" stroke="#68817b" stroke-width="1.6"/>
+  <circle cx="60" cy="250" r="3" fill="none" stroke="#68817b" stroke-width="1.4"/>
+  <path d="M54 259c1-5 11-5 12 0" fill="none" stroke="#68817b" stroke-width="1.4"/>
+  <text x="48" y="301" class="muted body">Reports</text>
+  <rect x="52" y="282" width="16" height="17" rx="3" fill="none" stroke="#68817b" stroke-width="1.5"/>
+  <path d="M56 288h8m-8 4h8m-8 4h5" stroke="#68817b" stroke-width="1.3" stroke-linecap="round"/>
+  <text x="48" y="356" class="eyebrow muted">SYSTEM</text>
+  <text x="48" y="398" class="muted body">Settings</text>
+  <circle cx="60" cy="393" r="8" fill="none" stroke="#68817b" stroke-width="1.5"/>
+  <circle cx="60" cy="393" r="2.5" fill="none" stroke="#68817b" stroke-width="1.5"/>
+  <line x1="60" y1="382" x2="60" y2="385" stroke="#68817b" stroke-width="1.5"/>
+  <line x1="60" y1="401" x2="60" y2="404" stroke="#68817b" stroke-width="1.5"/>
+
+  <rect x="39" y="881" width="202" height="75" rx="16" fill="#ffffff" fill-opacity=".62" stroke="#ffffff" stroke-opacity=".1"/>
+  <circle cx="61" cy="909" r="6" fill="#29825a"/>
+  <text x="77" y="913" class="bright" font-size="12" font-weight="600">Analyzer connected</text>
+  <text x="53" y="938" class="muted" font-size="11">Last sync · just now</text>
+
+  <!-- Main heading -->
+  <text x="295" y="64" class="bright" font-size="27" font-weight="700">Laboratory overview</text>
+  <text x="296" y="91" class="muted" font-size="13">Live patient results and analyzer activity</text>
+  <rect x="1257" y="39" width="178" height="44" rx="13" fill="url(#glass)" stroke="#ffffff" stroke-opacity=".15"/>
+  <circle cx="1280" cy="61" r="5" fill="#29825a"/>
+  <text x="1294" y="65" fill="#345650" font-size="12">System online</text>
+  <rect x="1450" y="39" width="112" height="44" rx="13" fill="url(#glass)" stroke="#ffffff" stroke-opacity=".15"/>
+  <circle cx="1473" cy="61" r="13" fill="#d2e6df"/>
+  <text x="1470" y="65" fill="#246c5d" font-size="10" font-weight="700">AD</text>
+  <text x="1494" y="65" class="bright" font-size="12">Admin</text>
+
+  <!-- KPI cards -->
+  <g filter="url(#shadow)">
+    <rect x="294" y="125" width="292" height="125" rx="20" class="card"/>
+    <rect x="603" y="125" width="292" height="125" rx="20" class="card"/>
+    <rect x="912" y="125" width="292" height="125" rx="20" class="card"/>
+    <rect x="1221" y="125" width="341" height="125" rx="20" class="card"/>
+  </g>
+  <text x="319" y="158" class="eyebrow muted">RESULTS TODAY</text>
+  <text x="319" y="207" class="bright" font-size="34" font-weight="700">248</text>
+  <text x="384" y="205" fill="#257a67" font-size="12">↑ 12% from yesterday</text>
+  <circle cx="548" cy="178" r="22" fill="#7ecab6" fill-opacity=".12"/>
+  <path d="M539 179h18m-9-9v18" stroke="#347d6b" stroke-width="2" stroke-linecap="round"/>
+
+  <text x="628" y="158" class="eyebrow muted">PATIENTS</text>
+  <text x="628" y="207" class="bright" font-size="34" font-weight="700">86</text>
+  <text x="679" y="205" class="muted" font-size="12">across 12 test groups</text>
+  <circle cx="858" cy="178" r="22" fill="#9bcbd7" fill-opacity=".12"/>
+  <circle cx="858" cy="174" r="5" fill="none" stroke="#498ea0" stroke-width="1.7"/>
+  <path d="M848 188c1-7 19-7 20 0" fill="none" stroke="#498ea0" stroke-width="1.7"/>
+
+  <text x="937" y="158" class="eyebrow muted">REVIEW NEEDED</text>
+  <text x="937" y="207" class="bright" font-size="34" font-weight="700">04</text>
+  <text x="989" y="205" fill="#996d22" font-size="12">pending verification</text>
+  <circle cx="1167" cy="178" r="22" fill="#f2dfb6" fill-opacity=".12"/>
+  <path d="M1167 165v14m0 7v1" stroke="#8a6729" stroke-width="2.3" stroke-linecap="round"/>
+
+  <text x="1246" y="158" class="eyebrow muted">ANALYZER STATUS</text>
+  <text x="1246" y="203" class="bright" font-size="22" font-weight="650">All systems normal</text>
+  <circle cx="1249" cy="224" r="4" fill="#29825a"/>
+  <text x="1261" y="228" class="muted" font-size="11">Connected · results syncing</text>
+
+  <!-- Results panel -->
+  <rect x="294" y="273" width="1268" height="651" rx="22" fill="url(#glass)" stroke="#ffffff" stroke-opacity=".15" filter="url(#shadow)"/>
+  <text x="322" y="315" class="bright" font-size="17" font-weight="650">Recent results</text>
+  <text x="322" y="338" class="muted" font-size="11">Review incoming laboratory values</text>
+  <rect x="1199" y="294" width="332" height="42" rx="12" fill="#e3ece9" fill-opacity=".86" stroke="#cbd9d5" stroke-opacity=".14"/>
+  <circle cx="1221" cy="314" r="7" fill="none" stroke="#68817b" stroke-width="1.5"/>
+  <path d="m1226 319 5 5" stroke="#68817b" stroke-width="1.5" stroke-linecap="round"/>
+  <text x="1240" y="319" fill="#718582" font-size="12">Search patient or test...</text>
+  <rect x="1438" y="294" width="93" height="42" rx="12" fill="#5aa991" fill-opacity=".14" stroke="#7cc5b1" stroke-opacity=".28"/>
+  <path d="M1457 307v13m-5-5 5 5 5-5" fill="none" stroke="#245f52" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="1470" y="319" fill="#245f52" font-size="11" font-weight="600">Export</text>
+
+  <!-- Filters -->
+  <rect x="322" y="359" width="93" height="31" rx="10" fill="#d5eee6" fill-opacity=".18" stroke="#4d9e89" stroke-opacity=".3"/>
+  <text x="341" y="379" fill="#245f52" font-size="11" font-weight="600">All results</text>
+  <text x="435" y="379" class="muted" font-size="11">Hematology</text>
+  <text x="531" y="379" class="muted" font-size="11">Chemistry</text>
+  <text x="614" y="379" class="muted" font-size="11">Coagulation</text>
+  <text x="708" y="379" class="muted" font-size="11">Urinalysis</text>
+  <text x="1490" y="379" class="muted" font-size="11" text-anchor="end">Updated 10:42:18</text>
+
+  <!-- Table header -->
+  <rect x="316" y="405" width="1224" height="38" rx="9" fill="#e3ece9" fill-opacity=".28"/>
+  <text x="339" y="429" class="eyebrow muted">PATIENT / UHID</text>
+  <text x="665" y="429" class="eyebrow muted">TEST</text>
+  <text x="1005" y="429" class="eyebrow muted">RESULT</text>
+  <text x="1191" y="429" class="eyebrow muted">RECEIVED</text>
+  <text x="1370" y="429" class="eyebrow muted">STATUS</text>
+
+  <!-- Row 1 -->
+  <circle cx="353" cy="478" r="18" fill="#c0ded3" fill-opacity=".3"/>
+  <text x="353" y="482" fill="#2b6555" font-size="10" font-weight="700" text-anchor="middle">RK</text>
+  <text x="383" y="475" class="bright" font-size="13" font-weight="600">Riya Kapoor</text>
+  <text x="383" y="495" class="muted" font-size="11">UHID · 104829</text>
+  <text x="665" y="482" fill="#405a56" font-size="13">Complete blood count</text>
+  <text x="1005" y="482" class="bright" font-size="13" font-weight="600">12.8 g/dL</text>
+  <text x="1191" y="482" class="muted" font-size="12">10:42 AM</text>
+  <rect x="1367" y="463" width="112" height="27" rx="9" fill="#29825a" fill-opacity=".13"/>
+  <circle cx="1382" cy="476" r="3.5" fill="#29825a"/>
+  <text x="1393" y="480" fill="#267350" font-size="10" font-weight="600">Within range</text>
+  <line x1="328" y1="512" x2="1528" y2="512" stroke="#23463f" stroke-opacity=".09"/>
+
+  <!-- Row 2 -->
+  <circle cx="353" cy="548" r="18" fill="#c6dfe5" fill-opacity=".3"/>
+  <text x="353" y="552" fill="#355f69" font-size="10" font-weight="700" text-anchor="middle">AM</text>
+  <text x="383" y="545" class="bright" font-size="13" font-weight="600">Arjun Mehta</text>
+  <text x="383" y="565" class="muted" font-size="11">UHID · 104830</text>
+  <text x="665" y="552" fill="#405a56" font-size="13">Serum creatinine</text>
+  <text x="1005" y="552" class="bright" font-size="13" font-weight="600">0.9 mg/dL</text>
+  <text x="1191" y="552" class="muted" font-size="12">10:39 AM</text>
+  <rect x="1367" y="533" width="112" height="27" rx="9" fill="#29825a" fill-opacity=".13"/>
+  <circle cx="1382" cy="546" r="3.5" fill="#29825a"/>
+  <text x="1393" y="550" fill="#267350" font-size="10" font-weight="600">Within range</text>
+  <line x1="328" y1="582" x2="1528" y2="582" stroke="#23463f" stroke-opacity=".09"/>
+
+  <!-- Row 3 -->
+  <circle cx="353" cy="618" r="18" fill="#d9cadc" fill-opacity=".3"/>
+  <text x="353" y="622" fill="#69526d" font-size="10" font-weight="700" text-anchor="middle">NS</text>
+  <text x="383" y="615" class="bright" font-size="13" font-weight="600">Neha Sharma</text>
+  <text x="383" y="635" class="muted" font-size="11">UHID · 104831</text>
+  <text x="665" y="622" fill="#405a56" font-size="13">Glucose, fasting</text>
+  <text x="1005" y="622" class="bright" font-size="13" font-weight="600">92 mg/dL</text>
+  <text x="1191" y="622" class="muted" font-size="12">10:35 AM</text>
+  <rect x="1367" y="603" width="112" height="27" rx="9" fill="#29825a" fill-opacity=".13"/>
+  <circle cx="1382" cy="616" r="3.5" fill="#29825a"/>
+  <text x="1393" y="620" fill="#267350" font-size="10" font-weight="600">Within range</text>
+  <line x1="328" y1="652" x2="1528" y2="652" stroke="#23463f" stroke-opacity=".09"/>
+
+  <!-- Row 4 -->
+  <circle cx="353" cy="688" r="18" fill="#e7d8b6" fill-opacity=".3"/>
+  <text x="353" y="692" fill="#6b592d" font-size="10" font-weight="700" text-anchor="middle">VS</text>
+  <text x="383" y="685" class="bright" font-size="13" font-weight="600">Vikram Singh</text>
+  <text x="383" y="705" class="muted" font-size="11">UHID · 104832</text>
+  <text x="665" y="692" fill="#405a56" font-size="13">Potassium</text>
+  <text x="1005" y="692" fill="#986c22" font-size="13" font-weight="700">6.1 mmol/L</text>
+  <text x="1191" y="692" class="muted" font-size="12">10:31 AM</text>
+  <rect x="1367" y="673" width="112" height="27" rx="9" fill="#e8c783" fill-opacity=".15"/>
+  <circle cx="1382" cy="686" r="3.5" fill="#8c672d"/>
+  <text x="1393" y="690" fill="#8c672d" font-size="10" font-weight="600">Review result</text>
+  <line x1="328" y1="722" x2="1528" y2="722" stroke="#23463f" stroke-opacity=".09"/>
+
+  <!-- Row 5 -->
+  <circle cx="353" cy="758" r="18" fill="#c9e0d1" fill-opacity=".3"/>
+  <text x="353" y="762" fill="#315f4d" font-size="10" font-weight="700" text-anchor="middle">PD</text>
+  <text x="383" y="755" class="bright" font-size="13" font-weight="600">Priya Desai</text>
+  <text x="383" y="775" class="muted" font-size="11">UHID · 104833</text>
+  <text x="665" y="762" fill="#405a56" font-size="13">Liver function panel</text>
+  <text x="1005" y="762" class="bright" font-size="13" font-weight="600">34 U/L</text>
+  <text x="1191" y="762" class="muted" font-size="12">10:27 AM</text>
+  <rect x="1367" y="743" width="112" height="27" rx="9" fill="#29825a" fill-opacity=".13"/>
+  <circle cx="1382" cy="756" r="3.5" fill="#29825a"/>
+  <text x="1393" y="760" fill="#267350" font-size="10" font-weight="600">Within range</text>
+  <line x1="328" y1="792" x2="1528" y2="792" stroke="#23463f" stroke-opacity=".09"/>
+
+  <!-- Row 6 -->
+  <circle cx="353" cy="828" r="18" fill="#e1d2d8" fill-opacity=".3"/>
+  <text x="353" y="832" fill="#6e5260" font-size="10" font-weight="700" text-anchor="middle">SK</text>
+  <text x="383" y="825" class="bright" font-size="13" font-weight="600">Sana Khan</text>
+  <text x="383" y="845" class="muted" font-size="11">UHID · 104834</text>
+  <text x="665" y="832" fill="#405a56" font-size="13">Thyroid stimulating hormone</text>
+  <text x="1005" y="832" class="bright" font-size="13" font-weight="600">2.4 µIU/mL</text>
+  <text x="1191" y="832" class="muted" font-size="12">10:24 AM</text>
+  <rect x="1367" y="813" width="112" height="27" rx="9" fill="#29825a" fill-opacity=".13"/>
+  <circle cx="1382" cy="826" r="3.5" fill="#29825a"/>
+  <text x="1393" y="830" fill="#267350" font-size="10" font-weight="600">Within range</text>
+
+  <line x1="322" y1="875" x2="1534" y2="875" stroke="#23463f" stroke-opacity=".11"/>
+  <text x="327" y="900" class="muted" font-size="11">Showing 6 of 248 results</text>
+  <text x="1514" y="900" fill="#315f4d" font-size="11" text-anchor="end">View all results  →</text>
+</svg>

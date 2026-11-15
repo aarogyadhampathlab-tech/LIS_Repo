@@ -2,13 +2,12 @@ import os
 import time
 import shutil
 import datetime
-import subprocess
 import threading
 from collections import Counter
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from config import NETWORK_SOURCE, WATCH_FOLDER
-from parser_logic import process_file
+from core.parser_logic import process_file
 
 class MedicalHandler(FileSystemEventHandler):
     """Processes completed LIS result logs and forwards only unseen rows."""
@@ -38,10 +37,19 @@ class MedicalHandler(FileSystemEventHandler):
     def process_existing_files(self, folder_path):
         """Load result logs already present when the watcher starts."""
         try:
+            file_paths = []
             for file_name in sorted(os.listdir(folder_path)):
                 file_path = os.path.join(folder_path, file_name)
                 if os.path.isfile(file_path) and self._is_current_result_log(file_path):
-                    self._process_file(file_path)
+                    try:
+                        modified_at = os.path.getmtime(file_path)
+                    except OSError as error:
+                        print(f"Error scanning result log {file_path}: {error}")
+                        continue
+                    file_paths.append((modified_at, file_path))
+
+            for _, file_path in sorted(file_paths):
+                self._process_file(file_path)
         except OSError as error:
             print(f"Error scanning result logs in {folder_path}: {error}")
 
@@ -98,16 +106,10 @@ class MedicalHandler(FileSystemEventHandler):
             print(f"Error processing result log {file_path}: {error}")
 
 def start_sync_task(status_callback):
-    """Check network connection and copy new logs every 10 seconds."""
+    """Check network access and copy updated logs every three seconds."""
     def run():
         while True:
             try:
-                # 1. Check if server is reachable (Ping)
-                host_ip = "192.168.1.103"
-                ping = subprocess.run(f"ping -n 1 -w 1000 {host_ip}", 
-                                     stdout=subprocess.DEVNULL, shell=True)
-                
-                # 2. Check if folder is accessible
                 online = os.path.isdir(NETWORK_SOURCE)
                 status_callback(online, NETWORK_SOURCE)
                 

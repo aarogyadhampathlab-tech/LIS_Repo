@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 
-ALERT_RULES_PATH = Path(__file__).with_name("threshold_editor") / "thresholds.json"
+ALERT_RULES_PATH = Path(__file__).parents[1] / "config" / "thresholds.json"
 CRITICAL_TEST_ALIASES = {
     "sodium": "sodiumna",
     "potassium": "potassiumk",

@@ -7,12 +7,12 @@
             "unit": "mmol/L"
         },
         "POTASSIUM (K+)": {
-            "low": 3.5,
-            "high": 6.5,
+            "low": 3.0,
+            "high": 6.0,
             "unit": "mmol/L"
         },
         "GLUCOSE": {
-            "high": 250,
+            "high": 300,
             "unit": "mg/dL"
         },
         "SERUM CREATININE": {
@@ -20,15 +20,15 @@
             "unit": "mg/dL"
         },
         "TOTAL BILIRUBIN": {
-            "high": 2.0,
+            "high": 10.0,
             "unit": "mg/dL"
         },
         "AST / SGOT": {
-            "high": 100,
+            "high": 300,
             "unit": "U/L"
         },
         "ALT / SGPT": {
-            "high": 100,
+            "high": 200,
             "unit": "U/L"
         }
     }
