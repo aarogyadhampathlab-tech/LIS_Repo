@@ -45,5 +45,41 @@ class AlertDisplayTests(unittest.TestCase):
         self.assertEqual(grouped[2]["alert_keys"], ["other-patient"])
 
 
+class ThresholdAlertBehaviorTests(unittest.TestCase):
+    def setUp(self):
+        self.alerts = type("AlertHarness", (AlertPanelMixin,), {})()
+
+    def test_disabled_test_skips_its_numeric_threshold_alert(self):
+        self.alerts.alert_rules = {
+            "GLUCOSE": {"high": 300, "unit": "mg/dL", "enabled": False}
+        }
+
+        self.assertIsNone(self.alerts._alert_reason("GLUCOSE", "301 mg/dL"))
+
+    def test_enabled_test_keeps_its_configured_threshold_alert(self):
+        self.alerts.alert_rules = {
+            "GLUCOSE": {"high": 300, "unit": "mg/dL", "enabled": True}
+        }
+
+        self.assertEqual(
+            self.alerts._alert_reason("GLUCOSE", "301 mg/dL"),
+            "HIGH (> 300)",
+        )
+
+    def test_disabling_numeric_threshold_keeps_missing_and_error_alerts(self):
+        self.alerts.alert_rules = {
+            "GLUCOSE": {"high": 300, "unit": "mg/dL", "enabled": False}
+        }
+
+        self.assertEqual(
+            self.alerts._alert_reason("GLUCOSE", "MISSING_RESULT"),
+            "MISSING_RESULT",
+        )
+        self.assertEqual(
+            self.alerts._alert_reason("GLUCOSE", "Technical Error"),
+            "TECHNICAL ERROR",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

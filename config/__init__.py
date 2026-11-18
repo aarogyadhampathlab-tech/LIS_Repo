@@ -1,7 +1,10 @@
 import json
 from pathlib import Path
 
-from core.alert_rules import load_alert_rules
+from core.alert_rules import (
+    load_alert_rules,
+    save_alert_rules as persist_alert_rules,
+)
 
 
 def load_test_map():
@@ -53,20 +56,12 @@ def save_critical_ranges(critical_ranges):
     updated = {}
     for test_name, thresholds in critical_ranges.items():
         rule = dict(thresholds)
-        if test_name in existing:
-            rule.setdefault("unit", existing[test_name].get("unit", ""))
+        previous = existing.get(test_name, {})
+        rule.setdefault("unit", previous.get("unit", ""))
+        rule.setdefault("enabled", previous.get("enabled", True))
         updated[test_name] = rule
 
-    configuration_path = Path(__file__).with_name("thresholds.json")
-    with configuration_path.open("w", encoding="utf-8") as rules_file:
-        json.dump({
-            "_note": (
-                "DEMO ALERT TRIGGERS ONLY. Confirm thresholds and units with "
-                "the laboratory director before clinical use."
-            ),
-            "critical_ranges": updated,
-        }, rules_file, indent=4)
-        rules_file.write("\n")
+    persist_alert_rules(updated)
 
 TECHNICAL_ERROR_KEYWORDS = [
     "no result", "no-result", "technical error", "tech error", "error", "failed", "invalid", "timeout"

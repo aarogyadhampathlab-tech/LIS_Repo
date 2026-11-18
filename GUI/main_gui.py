@@ -2,7 +2,17 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QStandardPaths, Qt, QTimer, Signal, Slot
+from PySide6.QtCore import (
+    QEasingCurve,
+    QModelIndex,
+    QPropertyAnimation,
+    QStandardPaths,
+    QSize,
+    Qt,
+    QTimer,
+    Signal,
+    Slot,
+)
 from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -11,6 +21,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
     QGraphicsDropShadowEffect,
+    QGraphicsOpacityEffect,
     QHeaderView,
     QHBoxLayout,
     QLabel,
@@ -21,7 +32,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QStackedWidget,
-    QStyle,
     QTableWidget,
     QTableWidgetItem,
     QTreeWidget,
@@ -31,6 +41,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.alert_store import AlertStore
+from core.alert_rules import load_alert_rules
 from core.patient_records import (
     index_missing_results,
     patient_freshness,
@@ -42,6 +53,7 @@ from core.patient_directory import load_patient_names
 from GUI.alerts import AlertPanelMixin
 from GUI.common import COLORS
 from GUI.glucose_panel import GlucosePanelMixin
+from GUI.settings import AlertSettingsPage
 
 
 MAIN_COLORS = {
@@ -129,11 +141,40 @@ def make_app_icon():
     painter.end()
     return QIcon(pixmap)
 
+
+def make_patient_icon_pixmap():
+    pixmap = QPixmap(20, 20)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor("#E5F0FC"))
+    painter.drawEllipse(0, 0, 20, 20)
+    painter.setBrush(QColor("#4F83B8"))
+    painter.drawEllipse(7, 4, 6, 6)
+    painter.drawRoundedRect(4, 12, 12, 6, 4, 4)
+    painter.end()
+    return pixmap
+
+
 def create_application(arguments):
     application = QApplication(arguments)
     application.setApplicationName("LIS Lab Monitor")
-    application.setFont(QFont("Segoe UI Variable", 10))
+    font = QFont("Segoe UI", 10)
+    font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+    font.setHintingPreference(QFont.HintingPreference.PreferDefaultHinting)
+    application.setFont(font)
     return application
+
+
+def group_records_by_received_date(records, received_at_by_record):
+    groups = {}
+    for record in records:
+        received_at = received_at_by_record.get(record)
+        date_key = received_at.date() if received_at is not None else None
+        groups.setdefault(date_key, []).append(record)
+    return groups
+
 
 class LabApp(AlertPanelMixin, GlucosePanelMixin, QMainWindow):
     records_received = Signal(object)
@@ -150,6 +191,7 @@ class LabApp(AlertPanelMixin, GlucosePanelMixin, QMainWindow):
 
         self.all_records = []
         self.result_received_at = {}
+        self.alert_rules = load_alert_rules()
         self.notified_records = set()
         self.alerted_records = set()
         data_directory = QStandardPaths.writableLocation(
@@ -185,6 +227,18 @@ class LabApp(AlertPanelMixin, GlucosePanelMixin, QMainWindow):
         self.view_refresh_timer.timeout.connect(self.filter_data)
 
         self._build_interface()
+        self.connection_dot_opacity = QGraphicsOpacityEffect(self.connection_dot)
+        self.connection_dot.setGraphicsEffect(self.connection_dot_opacity)
+        self.connection_dot_animation = QPropertyAnimation(
+            self.connection_dot_opacity, b"opacity", self
+        )
+        self.connection_dot_animation.setDuration(1000)
+        self.connection_dot_animation.setStartValue(0.55)
+        self.connection_dot_animation.setEndValue(1.0)
+        self.connection_dot_animation.setEasingCurve(
+            QEasingCurve.Type.InOutSine
+        )
+        self.connection_dot_animation.setLoopCount(-1)
         self.patient_names_by_barcode = {}
         self._patient_directory_error = None
         self._patient_directory_signature = None
@@ -324,7 +378,7 @@ class LabApp(AlertPanelMixin, GlucosePanelMixin, QMainWindow):
             QWidget#root {{
                 background: {MAIN_COLORS['background']};
                 color: {MAIN_COLORS['text']};
-                font-family: "Segoe UI Variable";
+                font-family: "Segoe UI";
                 font-size: 10pt;
             }}
             QFrame#mainSidebar {{
@@ -521,10 +575,14 @@ class LabApp(AlertPanelMixin, GlucosePanelMixin, QMainWindow):
         self.live_results_page = self._build_results()
         self.glucose_results_page = self._build_glucose_results_page()
         self.critical_history_page = self._build_critical_history_page()
+        self.settings_page = AlertSettingsPage(
+            self.alert_rules, self._apply_alert_rules
+        )
         for page in (
             self.live_results_page,
             self.glucose_results_page,
             self.critical_history_page,
+            self.settings_page,
         ):
             self.content_stack.addWidget(page)
         content.addWidget(self.content_stack, 1)
@@ -590,6 +648,7 @@ class LabApp(AlertPanelMixin, GlucosePanelMixin, QMainWindow):
         self._add_navigation_option(layout, "Live results", "live", checked=True)
         self._add_navigation_option(layout, "Glucose information", "glucose")
         self._add_navigation_option(layout, "Critical ranges", "critical")
+        self._add_navigation_option(layout, "Settings", "settings")
 
         layout.addStretch(1)
 
@@ -703,7 +762,7 @@ class LabApp(AlertPanelMixin, GlucosePanelMixin, QMainWindow):
         return row
 
     def _show_content_page(self, page_id):
-        page_indices = {"live": 0, "glucose": 1, "critical": 2}
+        page_indices = {"live": 0, "glucose": 1, "critical": 2, "settings": 3}
         self.current_page = page_id
         self.content_stack.setCurrentIndex(page_indices[page_id])
         self.navigation_buttons[page_id].setChecked(True)
@@ -901,7 +960,7 @@ class LabApp(AlertPanelMixin, GlucosePanelMixin, QMainWindow):
                     )
                     item.setForeground(QColor(color))
                     font = item.font()
-                    font.setBold(True)
+                    font.setBold(values[-1] != "OK")
                     item.setFont(font)
                 table.setItem(row_index, column_index, item)
 
@@ -1166,7 +1225,8 @@ class LabApp(AlertPanelMixin, GlucosePanelMixin, QMainWindow):
         patient_query = self.patient_search.text().strip().casefold()
         patient_filter = self.patient_filter.currentData()
         test_query = self.test_search.text().strip().casefold()
-        grouped = {}
+        grouped_by_date = {}
+        visible_patients = set()
         visible_result_count = 0
         records_by_recency = sorted(
             self.all_records,
@@ -1190,32 +1250,71 @@ class LabApp(AlertPanelMixin, GlucosePanelMixin, QMainWindow):
                     record
                 )
 
-        for patient_id, patient_name, test_name, result in records_by_recency:
-            patient_id_text = str(patient_id or "").casefold()
-            display_name = self._patient_display_name(patient_id, patient_name)
-            patient_name_text = str(display_name or "").casefold()
-            test_name_text = str(test_name or "").casefold()
-            if patient_filter == "uhid":
-                patient_matches = patient_query in patient_id_text
-            elif patient_filter == "name":
-                patient_matches = patient_query in patient_name_text
-            else:
-                patient_matches = (
-                    patient_query in patient_id_text
-                    or patient_query in patient_name_text
+        for date_key, date_records in group_records_by_received_date(
+            records_by_recency, self.result_received_at
+        ).items():
+            patients = {}
+            for patient_id, patient_name, test_name, result in date_records:
+                patient_id_text = str(patient_id or "").casefold()
+                display_name = self._patient_display_name(patient_id, patient_name)
+                patient_name_text = str(display_name or "").casefold()
+                test_name_text = str(test_name or "").casefold()
+                if patient_filter == "uhid":
+                    patient_matches = patient_query in patient_id_text
+                elif patient_filter == "name":
+                    patient_matches = patient_query in patient_name_text
+                else:
+                    patient_matches = (
+                        patient_query in patient_id_text
+                        or patient_query in patient_name_text
+                    )
+                if not patient_matches or test_query not in test_name_text:
+                    continue
+                patients.setdefault((patient_id, display_name), []).append(
+                    (test_name, result)
                 )
-            if not patient_matches or test_query not in test_name_text:
-                continue
-            grouped.setdefault((patient_id, display_name), []).append((test_name, result))
-            visible_result_count += 1
+                visible_patients.add((patient_id, display_name))
+                visible_result_count += 1
+            if patients:
+                grouped_by_date[date_key] = patients
 
         self.tree.clear()
-        for (patient_id, patient_name), tests in grouped.items():
+        date_items = {}
+        patient_rows = []
+        patient_icon_pixmap = make_patient_icon_pixmap()
+        for date_key, patients in grouped_by_date.items():
+            date_label = (
+                date_key.strftime("%A, %B %d, %Y")
+                if date_key is not None
+                else "Date unavailable"
+            )
+            date_item = QTreeWidgetItem([date_label, "", "", "", ""])
+            date_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+            date_item.setSizeHint(0, QSize(0, 40))
+            for column in range(self.tree.columnCount()):
+                date_item.setBackground(column, QColor("#E5F0FC"))
+                date_item.setForeground(column, QColor("#245C91"))
+                date_font = date_item.font(column)
+                date_font.setBold(True)
+                date_font.setPointSizeF(10)
+                date_item.setFont(column, date_font)
+            self.tree.addTopLevelItem(date_item)
+            self.tree.setFirstColumnSpanned(
+                self.tree.indexOfTopLevelItem(date_item), QModelIndex(), True
+            )
+            date_item.setExpanded(True)
+            date_items[date_key] = date_item
+            patient_rows.extend(
+                (date_key, patient, tests) for patient, tests in patients.items()
+            )
+
+        for date_key, (patient_id, patient_name), tests in patient_rows:
+            date_item = date_items[date_key]
             patient_item = QTreeWidgetItem(["", "", "", "", ""])
             patient_item.setData(
                 0, Qt.ItemDataRole.UserRole, (patient_id, patient_name)
             )
-            self.tree.addTopLevelItem(patient_item)
+            date_item.addChild(patient_item)
             patient_details = QWidget(self.tree)
             patient_details.setAttribute(
                 Qt.WidgetAttribute.WA_TransparentForMouseEvents
@@ -1224,12 +1323,8 @@ class LabApp(AlertPanelMixin, GlucosePanelMixin, QMainWindow):
             details_layout.setContentsMargins(2, 2, 2, 2)
             details_layout.setSpacing(5)
             patient_icon = QLabel()
-            patient_icon.setPixmap(
-                self.style()
-                .standardIcon(QStyle.StandardPixmap.SP_DirIcon)
-                .pixmap(16, 16)
-            )
-            patient_icon.setStyleSheet("background: transparent;")
+            patient_icon.setPixmap(patient_icon_pixmap)
+            patient_icon.setFixedSize(20, 20)
             details_layout.addWidget(patient_icon, 0, Qt.AlignmentFlag.AlignTop)
             patient_layout = QVBoxLayout()
             patient_layout.setContentsMargins(0, 0, 0, 0)
@@ -1267,10 +1362,11 @@ class LabApp(AlertPanelMixin, GlucosePanelMixin, QMainWindow):
                 foreground, background = freshness_colors[freshness]
                 freshness_label = QLabel(freshness)
                 freshness_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                freshness_label.setFixedSize(76, 20)
                 freshness_label.setStyleSheet(
                     f"color: {foreground}; background: {background}; "
-                    "border: none; border-radius: 5px; "
-                    "padding: 1px 5px; font-size: 7pt; font-weight: 600;"
+                    "border: none; border-radius: 10px; "
+                    "padding: 0 5px; font-size: 7pt; font-weight: 600;"
                 )
                 freshness_label.setToolTip(
                     "Time since this patient's most recent result: "
@@ -1322,6 +1418,11 @@ class LabApp(AlertPanelMixin, GlucosePanelMixin, QMainWindow):
                     else MAIN_COLORS["offline"]
                 )
                 test_item.setForeground(4, QColor(status_color))
+                if status == "OK":
+                    test_item.setForeground(1, QColor("#7B8DA0"))
+                    test_item.setForeground(2, QColor("#64788D"))
+                    test_item.setForeground(3, QColor("#8797A8"))
+                    test_item.setForeground(4, QColor("#6D9A83"))
                 patient_item.addChild(test_item)
 
         glucose_rows = []
@@ -1338,7 +1439,9 @@ class LabApp(AlertPanelMixin, GlucosePanelMixin, QMainWindow):
                     display_name,
                     test_name,
                     result,
-                    received_at.strftime("%I:%M:%S %p") if received_at else "—",
+                    received_at.strftime("%m/%d/%Y %I:%M:%S %p")
+                    if received_at
+                    else "—",
                     status,
                 )
             )
@@ -1346,7 +1449,7 @@ class LabApp(AlertPanelMixin, GlucosePanelMixin, QMainWindow):
         self.glucose_results_count.setText(f"{len(glucose_rows)} glucose results")
 
         self.result_count.setText(
-            f"{len(grouped)} PATIENTS  ·  {visible_result_count} RESULTS"
+            f"{len(visible_patients)} PATIENTS  ·  {visible_result_count} RESULTS"
         )
         self._update_summary_cards()
 
@@ -1387,8 +1490,12 @@ class LabApp(AlertPanelMixin, GlucosePanelMixin, QMainWindow):
         item = self.tree.currentItem()
         if item is None:
             return
-        patient_item = item if item.parent() is None else item.parent()
-        patient_identity = patient_item.data(0, Qt.ItemDataRole.UserRole)
+        patient_item = item
+        while patient_item is not None:
+            patient_identity = patient_item.data(0, Qt.ItemDataRole.UserRole)
+            if patient_identity:
+                break
+            patient_item = patient_item.parent()
         if not patient_identity:
             return
         patient_id, patient_name = patient_identity
@@ -1424,6 +1531,11 @@ class LabApp(AlertPanelMixin, GlucosePanelMixin, QMainWindow):
             color = MAIN_COLORS["online"] if online else MAIN_COLORS["offline"]
             status = "ONLINE" if online else "OFFLINE"
             self.connection_dot.setStyleSheet(f"color: {color}; font-size: 8pt;")
+            if online:
+                self.connection_dot_animation.start()
+            else:
+                self.connection_dot_animation.stop()
+                self.connection_dot_opacity.setOpacity(1.0)
             self.connection_label.setText(status)
             self.connection_label.setStyleSheet(
                 f"color: {color}; font-size: 8pt; font-weight: 700;"
@@ -1436,3 +1548,7 @@ class LabApp(AlertPanelMixin, GlucosePanelMixin, QMainWindow):
         super()._refresh_active_alerts()
         self._update_summary_cards()
         self._refresh_critical_history()
+
+    def _apply_alert_rules(self, alert_rules):
+        self.alert_rules = alert_rules
+        self.filter_data()

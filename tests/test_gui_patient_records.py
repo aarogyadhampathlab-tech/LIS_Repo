@@ -2,9 +2,36 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 from core.patient_records import patient_freshness, remove_replaced_missing_results
+from GUI.main_gui import group_records_by_received_date
 
 
 class PatientRecordDisplayTests(unittest.TestCase):
+    def test_results_are_grouped_by_received_date_in_recency_order(self):
+        newest = ("123", "PATIENT", "WBC", "7.4")
+        same_day = ("456", "OTHER", "RBC", "4.5")
+        older = ("789", "THIRD", "PLT", "200")
+        missing_time = ("000", "UNKNOWN", "HGB", "12")
+        newest_time = datetime(2026, 11, 15, 10, tzinfo=timezone.utc)
+        same_day_time = datetime(2026, 11, 15, 9, tzinfo=timezone.utc)
+        older_time = datetime(2026, 11, 14, 23, tzinfo=timezone.utc)
+
+        grouped = group_records_by_received_date(
+            [newest, same_day, older, missing_time],
+            {
+                newest: newest_time,
+                same_day: same_day_time,
+                older: older_time,
+            },
+        )
+
+        self.assertEqual(
+            list(grouped),
+            [newest_time.date(), older_time.date(), None],
+        )
+        self.assertEqual(grouped[newest_time.date()], [newest, same_day])
+        self.assertEqual(grouped[older_time.date()], [older])
+        self.assertEqual(grouped[None], [missing_time])
+
     def test_new_result_replaces_only_matching_missing_test(self):
         missing_record = ("123", "PATIENT", "WBC", "MISSING_RESULT")
         other_test = ("123", "PATIENT", "RBC", "MISSING_RESULT")

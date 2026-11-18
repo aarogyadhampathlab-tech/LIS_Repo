@@ -4,32 +4,40 @@
         "SODIUM (NA+)": {
             "low": 127,
             "high": 155,
-            "unit": "mmol/L"
+            "unit": "mmol/L",
+            "enabled": true
         },
         "POTASSIUM (K+)": {
             "low": 3.0,
             "high": 6.0,
-            "unit": "mmol/L"
+            "unit": "mmol/L",
+            "enabled": true
         },
         "GLUCOSE": {
+            "low": 55,
             "high": 300,
-            "unit": "mg/dL"
+            "unit": "mg/dL",
+            "enabled": true
         },
         "SERUM CREATININE": {
             "high": 2.0,
-            "unit": "mg/dL"
+            "unit": "mg/dL",
+            "enabled": true
         },
         "TOTAL BILIRUBIN": {
             "high": 10.0,
-            "unit": "mg/dL"
+            "unit": "mg/dL",
+            "enabled": true
         },
         "AST / SGOT": {
             "high": 300,
-            "unit": "U/L"
+            "unit": "U/L",
+            "enabled": true
         },
         "ALT / SGPT": {
             "high": 200,
-            "unit": "U/L"
+            "unit": "U/L",
+            "enabled": true
         }
     }
 }

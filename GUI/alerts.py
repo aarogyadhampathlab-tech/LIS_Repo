@@ -121,8 +121,9 @@ class AlertPanelMixin:
         if numeric is None:
             return None
 
-        range_def = find_critical_range(test_name, CRITICAL_RANGES)
-        if not range_def:
+        alert_rules = getattr(self, "alert_rules", CRITICAL_RANGES)
+        range_def = find_critical_range(test_name, alert_rules)
+        if not range_def or not range_def.get("enabled", True):
             return None
 
         low = range_def.get("low")
